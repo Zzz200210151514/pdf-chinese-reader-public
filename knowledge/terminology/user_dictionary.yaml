@@ -1,0 +1,3 @@
+version: 1
+# Add {source, target, domain, context, forbidden, variants} entries here.
+terms: []

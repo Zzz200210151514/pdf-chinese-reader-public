@@ -1,0 +1,36 @@
+version: 1
+terms:
+  - {source: rejection, target: 截留率, domain: membrane, context: membrane-separation, forbidden: [排斥], variants: [拒绝率, 排斥率]}
+  - {source: permeate, target: 渗透液, domain: membrane}
+  - {source: permeability, target: 渗透性, domain: membrane}
+  - {source: fouling, target: 污染, domain: membrane}
+  - {source: electrodialysis, target: 电渗析, domain: all}
+  - {source: electrodialysis metathesis, target: 电渗析复分解, domain: all}
+  - {source: scaling, target: 结垢, domain: membrane}
+  - {source: co-ion, target: 同号离子, domain: membrane, variants: [同离子, 共离子]}
+  - {source: counter-ion, target: 反离子, domain: membrane}
+  - {source: membrane, target: 膜, domain: membrane}
+  - {source: ion-exchange membrane, target: 离子交换膜, domain: membrane}
+  - {source: cation-exchange membrane, target: 阳离子交换膜, domain: membrane}
+  - {source: anion-exchange membrane, target: 阴离子交换膜, domain: membrane}
+  - {source: bipolar membrane, target: 双极膜, domain: membrane}
+  - {source: selectivity, target: 选择性, domain: membrane}
+  - {source: ion selectivity, target: 离子选择性, domain: membrane}
+  - {source: permselectivity, target: 选择透过性, domain: membrane}
+  - {source: flux, target: 通量, domain: membrane, forbidden: [流量]}
+  - {source: water flux, target: 水通量, domain: membrane}
+  - {source: current density, target: 电流密度, domain: membrane}
+  - {source: current efficiency, target: 电流效率, domain: membrane}
+  - {source: salt rejection, target: 脱盐率, domain: membrane}
+  - {source: desalination, target: 脱盐, domain: membrane}
+  - {source: concentration polarization, target: 浓差极化, domain: membrane}
+  - {source: osmosis, target: 渗透, domain: membrane}
+  - {source: reverse osmosis, target: 反渗透, domain: membrane}
+  - {source: nanofiltration, target: 纳滤, domain: membrane}
+  - {source: ultrafiltration, target: 超滤, domain: membrane}
+  - {source: microfiltration, target: 微滤, domain: membrane}
+  - {source: feed solution, target: 料液, domain: membrane}
+  - {source: feed, target: 进料, domain: membrane}
+  - {source: retentate, target: 浓缩液, domain: membrane}
+  - {source: molecular weight cut-off, target: 截留分子量, domain: membrane}
+  - {source: hydraulic pressure, target: 液压, domain: membrane}

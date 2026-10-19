@@ -1,0 +1,13 @@
+version: 1
+terms:
+  - {source: wastewater, target: 废水, domain: environmental}
+  - {source: contaminant, target: 污染物, domain: environmental}
+  - {source: mineralization, target: 矿化, domain: environmental}
+  - {source: effluent, target: 出水, domain: environmental}
+  - {source: influent, target: 进水, domain: environmental}
+  - {source: removal efficiency, target: 去除率, domain: environmental}
+  - {source: water treatment, target: 水处理, domain: environmental}
+  - {source: brine, target: 浓盐水, domain: environmental}
+  - {source: discharge, target: 排放, domain: environmental}
+  - {source: reclaimed water, target: 再生水, domain: environmental}
+  - {source: total dissolved solids, target: 总溶解固体, domain: environmental}

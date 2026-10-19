@@ -1,0 +1,18 @@
+version: 1
+terms:
+  - {source: overpotential, target: 过电位, domain: electrochemistry}
+  - {source: current density, target: 电流密度, domain: electrochemistry}
+  - {source: electrode, target: 电极, domain: electrochemistry}
+  - {source: anode, target: 阳极, domain: electrochemistry}
+  - {source: cathode, target: 阴极, domain: electrochemistry}
+  - {source: electrolyte, target: 电解质, domain: electrochemistry}
+  - {source: electrolysis, target: 电解, domain: electrochemistry}
+  - {source: half-reaction, target: 半反应, domain: electrochemistry}
+  - {source: redox, target: 氧化还原, domain: electrochemistry}
+  - {source: open circuit voltage, target: 开路电压, domain: electrochemistry}
+  - {source: standard potential, target: 标准电位, domain: electrochemistry}
+  - {source: reference electrode, target: 参比电极, domain: electrochemistry}
+  - {source: electrochemical impedance, target: 电化学阻抗, domain: electrochemistry}
+  - {source: cyclic voltammetry, target: 循环伏安法, domain: electrochemistry}
+  - {source: galvanostatic, target: 恒电流的, domain: electrochemistry}
+  - {source: potentiostatic, target: 恒电位的, domain: electrochemistry}

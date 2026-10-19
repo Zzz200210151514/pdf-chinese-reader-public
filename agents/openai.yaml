@@ -1,0 +1,4 @@
+interface:
+  display_name: "中文论文阅读版"
+  short_description: "全文翻译为 PDF、MD 或离线 HTML，保留图和公式，支持引用跳转"
+  default_prompt: "使用 $pdf-chinese-reader 制作中文全文阅读版，默认串行、本地提取、重点校读；只确认尚未明确的格式和提取方式，并发仅在我明确要求时启用。"

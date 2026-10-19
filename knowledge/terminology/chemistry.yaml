@@ -1,0 +1,19 @@
+version: 1
+terms:
+  - {source: adsorption, target: 吸附, domain: chemistry}
+  - {source: desorption, target: 解吸, domain: chemistry}
+  - {source: radical, target: 自由基, domain: chemistry}
+  - {source: catalysis, target: 催化, domain: chemistry}
+  - {source: catalyst, target: 催化剂, domain: chemistry}
+  - {source: oxidation, target: 氧化, domain: chemistry}
+  - {source: reduction, target: 还原, domain: chemistry}
+  - {source: hydrolysis, target: 水解, domain: chemistry}
+  - {source: precipitation, target: 沉淀, domain: chemistry}
+  - {source: dissolution, target: 溶解, domain: chemistry}
+  - {source: titration, target: 滴定, domain: chemistry}
+  - {source: stoichiometry, target: 化学计量, domain: chemistry}
+  - {source: aqueous solution, target: 水溶液, domain: chemistry}
+  - {source: concentration, target: 浓度, domain: chemistry}
+  - {source: saturated, target: 饱和的, domain: chemistry}
+  - {source: yield, target: 产率, domain: chemistry}
+  - {source: conversion, target: 转化率, domain: chemistry}

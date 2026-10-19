@@ -1,0 +1,32 @@
+version: 4
+provider: host
+model: null
+# Paper domain for terminology selection. Glossary entries are tagged with a
+# domain (chemistry / electrochemistry / environmental / membrane / all); only
+# entries matching this domain (or domain: all) are injected and validated.
+# Set this to the paper's field before translating, e.g. membrane for
+# electrodialysis / membrane-separation papers. See knowledge/terminology/.
+domain: chemistry
+rules_version: '4.1'
+timeout: 60
+retries: 2
+batch_size: 12
+# Start conservatively; 1 is sequential. Remote/custom adapters allow 1..8 workers.
+# Host-agent scheduling remains controlled by the host.
+concurrency: 1
+# Retry count when a remote adapter returns output that fails validation
+# (missing IDs, changed frozen scientific content, forbidden terminology).
+# 0 fails back to the agent immediately; 1-2 lets the adapter self-correct.
+validation_retries: 1
+# Remote calls require an explicit provider, model, base_url and key_env.
+# Secrets belong in environment variables, never this portable file.
+base_url: null
+key_env: null
+routes:
+  title: {}
+  abstract: {}
+  paragraph: {}
+  caption: {}
+  mechanism: {}
+  formula: {preserve: true}
+  reference: {preserve: true}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "description": "Test corpus sources are separated by provenance. Synthetic layouts are simulations, never actual journal papers.",
+  "synthetic_generator": "tests/fixtures.py:make_corpus(output_dir)",
+  "synthetic_coverage": [
+    {"name": "elsevier_two_column.pdf", "category": "double_column", "source_kind": "synthetic", "layout_simulation": "Elsevier-like two-column flow; not an Elsevier paper"},
+    {"name": "nature_single_column.pdf", "category": "single_column", "source_kind": "synthetic", "layout_simulation": "Nature-like single-column flow; not a Nature paper"},
+    {"name": "acs_table_heavy.pdf", "category": "table_heavy", "source_kind": "synthetic", "layout_simulation": "ACS-like deterministic vector table; not an ACS paper"},
+    {"name": "equation_dense.pdf", "category": "formula_heavy", "source_kind": "synthetic", "layout_simulation": "Dense text-layer equations and scientific symbols"},
+    {"name": "vector_figure_heavy.pdf", "category": "image_heavy", "source_kind": "synthetic", "layout_simulation": "Vector panels and captions"},
+    {"name": "reference_dense.pdf", "category": "reference_heavy", "source_kind": "synthetic", "layout_simulation": "Dense references with DOI and URL links"}
+  ],
+  "real_external_samples": [
+    {"name": "Han", "path_key": "external_samples.han", "expected_relative_path": "work/han2025/source.pdf", "pages": 9, "coverage": ["Elsevier two-column"], "status": "available-local"},
+    {"name": "Pan", "path_key": "external_samples.pan", "expected_relative_path": "work/source.pdf", "pages": 12, "coverage": ["includes ACS paper"], "status": "available-local"},
+    {"name": "Monat", "path_key": "external_samples.monat", "expected_relative_path": "work/monat2020/source.pdf", "pages": 15, "coverage": ["ACS supplemental material", "single-column tables", "equations"], "status": "available-local"},
+    {"name": "Chen2019", "path_key": "external_samples.chen2019", "expected_relative_path": "work/chen2019/source.pdf", "pages": 12, "coverage": ["Elsevier two-column"], "status": "new-sample-pending-run", "extraction": "local", "mineru_used": false},
+    {"name": "Nature-style real paper", "path_key": null, "expected_relative_path": null, "pages": null, "coverage": ["Nature single-column"], "status": "not-provided"}
+  ],
+  "path_mapping": "Resolve path_key values through user/CLI configuration relative to the workspace root; never embed machine-specific absolute paths in this shared index. External PDFs remain outside Git."
+}
