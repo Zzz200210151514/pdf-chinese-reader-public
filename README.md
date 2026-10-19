@@ -50,7 +50,7 @@ MD/HTML 生成入口及清单规范见 `references/web-markdown.md`；字体与�
 
 ## 安装到 Codex / Antigravity
 
-将本仓库的 `pdf-chinese-reader` 文件夹放入对应 skills 目录：
+将整个仓库文件夹重命名为 `pdf-chinese-reader`，放入对应 skills 目录（根目录应直接包含 `SKILL.md`）：
 - Codex: `$CODEX_HOME/skills/pdf-chinese-reader/`（未设置时为 `~/.codex/skills/pdf-chinese-reader/`）
 - 其他宿主：放入该宿主配置的 skills 目录，保留整个技能文件夹。
 
@@ -137,4 +137,4 @@ python -X utf8 -m unittest discover -s tests -p "test_*.py" -v
 
 ## V4.1 定向优化
 
-[修改说明](references/v41/V4.1 通用优化说明.md) · [实测性能](references/v41/性能前后对照.md) · [质量与未测试范围](references/v41/回归测试与质量验证.md) · [下一篇使用说明](references/v41/下一篇论文使用说明.md)。V4.1 保留原 writer，前移源结构门禁、增加逐块恢复与有界并发、统一字体及 workflow 日志。陌生论文冷启动严格验收尚未达标，不能将缓存回归耗时称作新论文全文翻译耗时。
+[修改说明](<references/v41/V4.1 通用优化说明.md>) · [实测性能](references/v41/性能前后对照.md) · [质量与未测试范围](references/v41/回归测试与质量验证.md) · [下一篇使用说明](references/v41/下一篇论文使用说明.md)。V4.1 保留原 writer，前移源结构门禁、增加逐块恢复与有界并发、统一字体及 workflow 日志。陌生论文冷启动严格验收尚未达标，不能将缓存回归耗时称作新论文全文翻译耗时。
