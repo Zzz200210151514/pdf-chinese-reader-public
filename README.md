@@ -62,6 +62,21 @@ MD/HTML 生成入口及清单规范见 `references/web-markdown.md`；字体与�
 
 ---
 
+## MinerU 法：双栏中文重排
+
+原位法仍为默认。说“用 MINERU法”时，用独立的 `reflow_reader.py` 提取结构并重排中文，复用原图、公式和译文缓存。默认微软雅黑、正文9.5pt、摘要9pt、图表题8.2pt；保留双栏节奏，允许自然换页。参考原稿保留刊名、出版标识、首页分区和页眉，位置大致接近即可；期刊样式需按实际原稿配置，不是任意期刊自动复刻。
+
+正文文献、图表及公式引用使用清晰蓝色；文献前的 `[N]` 编号本身可返回正文。PDF返回首次引用，离线HTML可返回最近阅读位置；子图按核实的坐标跳转，落点以最终PDF实际内容为准。
+
+双栏排版另需本地浏览器依赖：
+
+```text
+python -m pip install playwright
+python -m playwright install chromium
+```
+
+MinerU上传须已有授权；复用成功的结构化JSON时不用重新上传。完整流程、完整段落翻译、期刊布局要求及验收见 [MinerU 法](references/mineru-method.md)。它与 `translator_v4.py --extractor mineru` 的原位模式分别使用。
+
 ## 本地脚本依赖
 
 Python 3.10+。

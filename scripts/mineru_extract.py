@@ -26,8 +26,10 @@ def main():
  p.add_argument('--mode',choices=['precision','flash'],default='precision')
  p.add_argument('--cli',help='Path to the MinerU native executable when not on PATH')
  p.add_argument('--model',choices=['vlm','pipeline'],default='pipeline')
+ p.add_argument('--structured',action='store_true',help='Precision mode: retrieve Markdown and structured JSON for reflow')
  p.add_argument('--ocr',action='store_true');p.add_argument('--timeout',type=int,default=300)
  a=p.parse_args();source=Path(a.source).resolve();out=Path(a.output).resolve()
+ if a.structured and a.mode!='precision':p.error('--structured requires precision mode')
  cli=a.cli or shutil.which('mineru-open-api.exe') or shutil.which('mineru-open-api')
  if not cli or Path(cli).suffix.lower() in ('.cmd','.ps1'):
   raise SystemExit('Provide --cli with the MinerU native executable path; a shell wrapper is insufficient.')
@@ -35,6 +37,7 @@ def main():
  token=os.environ.get('MINERU_TOKEN') or stored_token()
  version=subprocess.run([cli,'version'],capture_output=True,text=True,encoding='utf-8',errors='replace',check=True).stdout.strip()
  parameters={'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),'mode':a.mode,'model':a.model if a.mode=='precision' else None,'ocr':a.ocr,'formula':True,'table':True,'language':'en','cli_version':version}
+ if a.structured:parameters['formats']=['md','json']
  key=hashlib.sha256(json.dumps(parameters,sort_keys=True).encode()).hexdigest()[:20]
  cache=out/key;marker=cache/'extraction-report.json'
  if marker.exists():
@@ -46,6 +49,7 @@ def main():
  with tempfile.TemporaryDirectory(prefix='mineru-attempt-',dir=out) as temp:
   stage=Path(temp)/'result';stage.mkdir()
   command=[cli,'extract' if a.mode=='precision' else 'flash-extract',str(source),'--language','en','--formula','--table','--timeout',str(a.timeout),'-o',str(stage/'document.md')]
+  if a.structured:command[-1]=str(stage)+__import__('os').sep;command+=['--format','md,json']
   if a.mode=='precision':command+=['--model',a.model]
   if a.ocr:command+=['--ocr']
   env=os.environ.copy()
@@ -54,6 +58,7 @@ def main():
   env.pop('MINERU_TOKEN',None);token=None
   artifacts=[{'path':f.relative_to(stage).as_posix(),'sha256':hashlib.sha256(f.read_bytes()).hexdigest(),'bytes':f.stat().st_size} for f in stage.rglob('*') if f.is_file()]
   success=r.returncode==0 and any(f['path'].endswith('.md') and (stage/f['path']).read_text(encoding='utf-8-sig').strip() for f in artifacts)
+  if a.structured:success=success and any(f['path'].endswith('.json') for f in artifacts)
   report={**parameters,'success':success,'exit_code':r.returncode,'elapsed_seconds':round(time.perf_counter()-start,2),'artifacts':artifacts if success else [],'translation_model_usage':None,'translation_model_usage_status':'not measured by extraction tool','asset_completeness':'must compare captions/equations/figures with original PDF'}
   if not success:
    message=r.stderr.lower();report['failure_category']='certificate-validation' if ('certificate' in message or 'x509' in message) else ('authentication' if ('token' in message or 'auth' in message) else 'other')

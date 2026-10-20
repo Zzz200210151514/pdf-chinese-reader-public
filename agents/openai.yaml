@@ -1,4 +1,4 @@
 interface:
   display_name: "中文论文阅读版"
-  short_description: "全文翻译为 PDF、MD 或离线 HTML，保留图和公式，支持引用跳转"
-  default_prompt: "使用 $pdf-chinese-reader 制作中文全文阅读版，默认串行、本地提取、重点校读；只确认尚未明确的格式和提取方式，并发仅在我明确要求时启用。"
+  short_description: "原位法或 MinerU 法制作中文论文阅读版，保留图表公式与双向引用"
+  default_prompt: "使用 $pdf-chinese-reader 制作中文全文阅读版。默认原位法；我说 MINERU法 时使用独立双栏中文重排模式。默认串行、重点校读，翻译模型沿用我的选择；保留正文跳文献及点击文献编号返回正文，只确认尚未明确的必要信息。"

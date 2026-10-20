@@ -2,3 +2,5 @@ PyMuPDF>=1.26,<2
 PyYAML>=6,<7
 # Optional proven decorative CFF glyph outlines: pip install fonttools
 # Optional HTML font embedding: pip install fonttools brotli
+
+# Optional MinerU double-column renderer: pip install playwright; python -m playwright install chromium
