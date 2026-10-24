@@ -86,14 +86,9 @@ def body_font_floor_applies(block):
     text = block.get('source_text') or block.get('html') or ''
     if is_stacked_script_fragment(text):
         return False
-    rect = block.get('rect') or [0, 0, 0, 0]
-    try:
-        # Citation chips and stacked-charge glyphs are smaller than a text line
-        # in a column. The floor is for column body copy, which is wider.
-        tiny = (float(rect[2]) - float(rect[0])) <= 80 and (float(rect[3]) - float(rect[1])) <= 30
-    except (TypeError, ValueError, IndexError):
-        tiny = False
-    if tiny:
+    # A short translated clause is still body copy. Only citation-only chips
+    # and actual script fragments may escape the floor, never a small box.
+    if re.fullmatch(r'\s*(?:<[^>]+>)*\[?\d[\d,;–−\- ]*\]?[.。,;，；]?(?:<[^>]+>)*\s*', text):
         return False
     return True
 

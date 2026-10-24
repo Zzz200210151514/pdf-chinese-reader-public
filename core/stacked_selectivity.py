@@ -13,7 +13,7 @@ import re
 from collections import Counter
 
 
-# Custom-font ToUnicode maps used for instrument model digits (CHI 760E).
+# Custom-font ToUnicode maps used for instrument model digits (CHI 660E).
 # U+F6B1 is 0 … U+F6BA is 9, so U+F6B7 is 6. Same map the text validator uses.
 _PUA_DIGITS = str.maketrans({0xF6B1 + i: str(i) for i in range(10)})
 _ION = re.compile(r'(?:Ca|Na|Cl|SO)')
@@ -134,7 +134,8 @@ def _raised_plus(plus, base):
     bsize = _size(base)
     psize = _size(plus, bsize)
     delta = _origin_y(base) - _origin_y(plus)
-    if delta < max(0.35 * bsize, 1.2) or delta > bsize * 3.6:
+    # The lower calcium charge can sit just below the S baseline (Pan ACS).
+    if delta < -0.3 * bsize or delta > bsize * 3.6:
         return False
     if psize > bsize * 0.92 and not (int(plus.get('flags') or 0) & 1):
         return False
@@ -149,6 +150,17 @@ def _in_band(span, base, reach):
     cx, cy = _center(span)
     return (float(box[0]) - bsize <= cx <= float(box[2]) + reach
             and float(box[1]) - bsize * 2.4 <= cy <= float(box[3]) + bsize * 1.7)
+
+
+def _script_near(piece, base):
+    # Ion scripts belong to this line and symbol, never a neighbouring column
+    # or full-size concentration digits in the surrounding paragraph.
+    size = _size(base)
+    cx, _ = _center(piece)
+    box = base['bbox']
+    return (_size(piece) <= size * 0.85
+            and abs(_origin_y(piece) - _origin_y(base)) <= size * 1.25
+            and box[0] - size * 0.3 <= cx <= box[2] + size * 3)
 
 
 def _has_ion(spans):
@@ -200,10 +212,10 @@ def _collect_clusters(indexed):
                  if id(plus) not in claimed and _nearest_raised_base(plus, bases) is base]
         if sum(_plus_count(plus) for plus in owned) < 2:
             continue
-        band = [base, *seeded]
+        band = bases
         ions = [piece for piece in pieces
-                if id(piece) not in claimed and _in_band(piece, base, _size(base) * 6)
-                and _nearest_base(piece, [item for item in band if _in_band(piece, item, _size(item) * 6)] or [base]) is base]
+                if id(piece) not in claimed and _script_near(piece, base)
+                and _nearest_base(piece, [item for item in band if _script_near(piece, item)] or [base]) is base]
         if not _has_ion(ions):
             continue
         cluster = [base, *owned, *ions]
@@ -217,10 +229,10 @@ def _collect_clusters(indexed):
             continue
         if not any(_in_band(base, seed, _size(seed) * 10) for seed in seeded):
             continue
-        hosts = [base, *seeded]
+        hosts = bases
         ions = [piece for piece in pieces
-                if id(piece) not in claimed and _in_band(piece, base, _size(base) * 6)
-                and _nearest_base(piece, [item for item in hosts if _in_band(piece, item, _size(item) * 6)] or [base]) is base]
+                if id(piece) not in claimed and _script_near(piece, base)
+                and _nearest_base(piece, [item for item in hosts if _script_near(piece, item)] or [base]) is base]
         if not _has_ion(ions):
             continue
         cluster = [base, *ions]
