@@ -98,3 +98,61 @@ def audit_document(original,saved,source_pages):
             'missing_internal_links':[{'source_page':k[0]+1,'signature':str(k[1]),'count':v} for k,v in missing_internal.items()],
             'missing_external_link_positions':len(missing_uri_positions),'missing_bookmarks':len(missing_bookmarks),
             'passed':profiles_ok and groups_ok and preserved_info and not missing and not missing_uri_positions and not missing_internal and not missing_bookmarks and not invalid}
+
+def align_author_year_links(original, saved, source_pages):
+    """Place GOTO hotspots on Chinese author-year glyphs.
+
+    Redaction restores original citation links at English coordinates. After
+    in-place Chinese reflow those boxes no longer cover the cite text, so this
+    pass searches the rewritten page for the same cite string and adds a
+    correctly placed GOTO. Original-position links stay so audit_document still
+    sees the source signatures.
+    """
+    from .citations import author_year_token
+    page_map = {n - 1: i for i, n in enumerate(source_pages)}
+    added = 0
+    for src_index, out_index in page_map.items():
+        source_page = original[src_index]
+        output_page = saved[out_index]
+        for link in source_page.get_links():
+            # Frontiers author-year cites are LINK_NAMED with page/to filled in.
+            if link.get('kind') not in (fitz.LINK_GOTO, fitz.LINK_NAMED, fitz.LINK_GOTOR):
+                continue
+            target = link.get('page')
+            if target not in page_map:
+                continue
+            raw = source_page.get_textbox(link['from']).replace('\n', ' ')
+            raw = re.sub(r'[\U00010000-\U0010ffff]', '', raw)
+            token = author_year_token(raw)
+            if not token:
+                continue
+            hits = output_page.search_for(token)
+            if not hits:
+                compact = re.sub(r'\s+', ' ', token)
+                if compact != token:
+                    hits = output_page.search_for(compact)
+            if not hits:
+                continue
+            box = hits[0]
+            covered = False
+            for existing in output_page.get_links():
+                if existing.get('page') != page_map[target]:
+                    continue
+                if fitz.Rect(existing['from']).intersects(box):
+                    covered = True
+                    break
+            if covered:
+                continue
+            payload = {
+                'kind': link.get('kind', fitz.LINK_GOTO),
+                'from': box,
+                'page': page_map[target],
+                'to': link.get('to', fitz.Point(0, 0)),
+            }
+            if link.get('nameddest'):
+                payload['nameddest'] = link['nameddest']
+            if 'zoom' in link:
+                payload['zoom'] = link['zoom']
+            output_page.insert_link(payload)
+            added += 1
+    return added

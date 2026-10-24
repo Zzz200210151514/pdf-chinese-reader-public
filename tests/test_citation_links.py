@@ -1,7 +1,7 @@
 import sys, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from core.citations import restore_citations, object_colours
+from core.citations import restore_citations, object_colours, author_year_colours
 from core.layout import _markup
 
 def native(text='12', colour=0x2156aa):
@@ -93,5 +93,24 @@ class CitationLinks(unittest.TestCase):
             spans=[s for b in page.get_text('dict')['blocks'] for l in b.get('lines',[]) for s in l['spans']]
             citation=next(s for s in spans if s['text'].strip()=='12')
             self.assertEqual(citation['color'],0x2156aa)
+
+    def test_author_year_keeps_source_link_blue(self):
+        lines=[{'spans':[{'text':'Nijmeijer and Metz, 2010','color':0x004c94}]}]
+        ay=author_year_colours(lines)
+        self.assertEqual(ay,{'Nijmeijer and Metz, 2010':'#004c94'})
+        markup=_markup('结构（Nijmeijer and Metz, 2010）。',set(),{},(),ay)
+        self.assertIn('style="color:#004c94;"',markup)
+        self.assertIn('Nijmeijer and Metz, 2010',markup)
+        self.assertNotIn('<a ',markup)
+
+    def test_figure_still_linked_beside_author_year(self):
+        lines=[{'spans':[
+            {'text':'Nijmeijer and Metz, 2010','color':0x004c94},
+            {'text':'Figure 1a','color':0x004c94},
+        ]}]
+        ay=author_year_colours(lines)
+        markup=_markup('（Nijmeijer and Metz, 2010）见图 1',{'fig/1'},{'fig/1':'#004c94'},(),ay)
+        self.assertIn('invalid/fig/1',markup)
+        self.assertIn('<span style="color:#004c94;">Nijmeijer and Metz, 2010</span>',markup)
 
 if __name__=='__main__':unittest.main()

@@ -117,3 +117,54 @@ def object_colours(lines, known):
                 colour = _colour(offsets[group.start(1)+number.start()])
                 if colour and 'ref/'+number[0] in known: colours['ref/'+number[0]] = colour
     return colours
+
+
+# Author-year cite painted in journal link blue, e.g. "Kim et al., 2016".
+AUTHOR_YEAR = re.compile(
+    r"(?:[A-Z][A-Za-z'\-]+(?:\s+(?:and|&)\s+[A-Z][A-Za-z'\-]+)?(?:\s+et\s+al\.?)?,\s*(?:19|20)\d{2}[a-z]?)"
+    r"|(?:[A-Z][A-Za-z'\-]+\s+et\s+al\.?)"
+    r"|(?:[A-Z][A-Za-z'\-]+,\s*(?:19|20)\d{2}[a-z]?)"
+)
+
+
+def _is_link_blue(color):
+    """True for journal hyperlink blue, not near-black body ink."""
+    if not isinstance(color, int) or not 0 <= color <= 0xffffff:
+        return False
+    r, g, b = (color >> 16) & 255, (color >> 8) & 255, color & 255
+    return b >= 100 and b > r + 30 and b > g + 30
+
+
+def author_year_token(text):
+    """Return a cleaned author-year token, or None if the span is not one."""
+    value = re.sub(r'[\U00010000-\U0010ffff]', '', text or '')
+    value = value.strip().strip('()[]（）.,;；')
+    value = re.sub(r'\s+', ' ', value).strip()
+    if len(value) < 6:
+        return None
+    # Bare years are too ambiguous for colouring.
+    if re.fullmatch(r'(?:19|20)\d{2}[a-z]?', value):
+        return None
+    if AUTHOR_YEAR.fullmatch(value) or (
+            re.search(r'(?:19|20)\d{2}[a-z]?$', value)
+            and re.search(r'[A-Za-z]', value)
+            and (',' in value or re.search(r'\bet\s+al\b', value, re.I))):
+        return value
+    return None
+
+
+def author_year_colours(lines):
+    """Map source-evidenced author-year cite strings to their link colour."""
+    colours = {}
+    for line in lines or []:
+        for span in line.get('spans', []):
+            if not _is_link_blue(span.get('color')):
+                continue
+            token = author_year_token(span.get('text', ''))
+            if token:
+                colours[token] = _colour(span)
+    return colours
+
+
+def is_author_year_cite(text):
+    return author_year_token(text) is not None

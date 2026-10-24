@@ -5,7 +5,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 import pymupdf as fitz
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from core.preservation import document_copy,restore_links,audit_document
+from core.preservation import document_copy,restore_links,audit_document,align_author_year_links
 from core.resource_colors import snapshot_default_spaces,restore_default_spaces
 from core.fonts import resolve_fonts
 from core.raster import protected_pixmap
@@ -367,6 +367,7 @@ def build(args):
             else:page=None
     # Avoid serializing repeated full CJK fonts to an in-memory buffer.
     target.parent.mkdir(parents=True,exist_ok=True)
+    aligned_author_year_links=0
     with tempfile.TemporaryDirectory(prefix='pdf-reader-') as temp:
         temp_pdf=Path(temp)/'annotations.pdf';doc.subset_fonts();doc.save(temp_pdf,garbage=4,deflate=True);doc.close();doc=fitz.open(temp_pdf)
         links=[];first={}
@@ -400,6 +401,7 @@ def build(args):
         if 'title' in m:metadata['title']=m['title']
         if 'scope' in m:metadata['subject']=m['scope']
         doc.set_metadata(metadata)
+        aligned_author_year_links=align_author_year_links(original,doc,source_pages)
         doc.subset_fonts();doc.save(target,garbage=4,deflate=True);doc.close()
     saved=fitz.open(target)
     timings['save_fonts_links_seconds']=round(time.perf_counter()-phase,3);phase=time.perf_counter()
@@ -472,7 +474,7 @@ def build(args):
                   delivery_status='passed_with_warnings' if warnings else 'passed',visual_review='OPTIONAL QUICK REVIEW')
     timings['preview_seconds']=round(time.perf_counter()-phase,3)
     timings['total_seconds']=round(time.perf_counter()-started,3)
-    report.update(timings=timings,document_preservation=preservation,restored_source_links=restored_links,restored_default_color_spaces=restored_default_spaces)
+    report.update(timings=timings,document_preservation=preservation,restored_source_links=restored_links,aligned_author_year_links=aligned_author_year_links,restored_default_color_spaces=restored_default_spaces)
     target.with_suffix('.validation.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps({'output':str(target),'pages':len(saved),'reference_count':len(ref_numbers),'structural_checks_passed':True,'english_residue':len(residue),'outside_region_changes':len(outside),
                       'delivery_status':report['delivery_status'],'warnings':len(warnings)},ensure_ascii=False))

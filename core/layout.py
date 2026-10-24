@@ -7,7 +7,7 @@ import re
 
 from .classifier import classify, column_groups, intersects, union
 from .redaction import split_masks
-from .citations import restore_citations, object_colours, canonical
+from .citations import restore_citations, object_colours, canonical, author_year_colours
 from .paragraphs import prepare_render_text
 
 
@@ -22,8 +22,9 @@ def create_source_map(inspection):
     return classify(inspection)
 
 
-def _markup(text, known, colours=None, citation_tokens=()):
+def _markup(text, known, colours=None, citation_tokens=(), author_years=None):
     colours = colours or {}
+    author_years = author_years or {}
     def anchor(key, label):
         colour = colours.get(key, '#0000ff')
         return f'<a href="https://pdf-reader.invalid/{key}" style="color:{colour};text-decoration:none">{label}</a>'
@@ -72,7 +73,30 @@ def _markup(text, known, colours=None, citation_tokens=()):
             part = re.sub(r"((?:Fig(?:ure)?\.?|Table|Eq(?:uation)?\.?|图|表|式)\s*\(?)(\d+)\)?",
                           lambda m: object_marker(m, context), part, flags=re.I)
             parts[i] = part
-    return "".join(parts)
+    marked = "".join(parts)
+    if author_years:
+        # Longest first so "Kim et al., 2016" wins over "Kim et al.".
+        tokens = sorted(author_years, key=len, reverse=True)
+        chunks = re.split(r'(<[^>]+>)', marked)
+        for i, chunk in enumerate(chunks):
+            if not chunk or chunk.startswith('<'):
+                continue
+            for token in tokens:
+                colour = author_years[token]
+                needles = []
+                for candidate in (html.escape(token), token):
+                    if candidate and candidate not in needles:
+                        needles.append(candidate)
+                for needle in needles:
+                    if needle not in chunk:
+                        continue
+                    chunk = chunk.replace(
+                        needle,
+                        f'<span style="color:{colour};">{needle}</span>')
+                    break
+            chunks[i] = chunk
+        marked = ''.join(chunks)
+    return marked
 
 
 def _deduplicate(protected):
@@ -194,7 +218,8 @@ def compile_layout(mapping, fonts=None):
                 else:
                     issues.append(tagged)
             colours = {**object_colours(source_lines, known), **colours}
-            markup = _markup(scientific_markup(text, source_lines), known, colours, citation_tokens)
+            ay = author_year_colours(source_lines)
+            markup = _markup(scientific_markup(text, source_lines), known, colours, citation_tokens, ay)
             html = "<b>"+markup+"</b>" if b.get("bold") else markup
             absorbed_ids = list(b.get("absorbs") or [])
             source_ids = sorted({b["id"], *absorbed_ids}, key=lambda i: rank.get(i, len(rank)))
