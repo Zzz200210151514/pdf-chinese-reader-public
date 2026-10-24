@@ -1,5 +1,6 @@
 """Check actual font coverage and explicitly wrap fallback glyphs in PDF HTML."""
 import html
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 import pymupdf as fitz
@@ -85,3 +86,45 @@ def scientific_symbols(text):
     return ''.join(ch for ch in text if 'Ͱ' <= ch <= 'Ͽ'
                    or '⁰' <= ch <= '₟'
                    or ch in '¹²³±×÷−≈≤≥∂∑∫∞')
+
+
+def canonicalize_digit_cmaps(doc, first_xref):
+    """Use ASCII for known digit aliases in newly embedded font ToUnicode maps.
+
+    MuPDF can choose Noto's oldstyle-digit PUA aliases while embedding the
+    glyph requested by an ASCII digit. Fix the mapping, not the rendered glyph
+    or extracted prose; native source fonts are deliberately excluded.
+    """
+    seen = set()
+    for xref in range(first_xref, doc.xref_length()):
+        kind, value = doc.xref_get_key(xref, 'ToUnicode')
+        if kind != 'xref':
+            continue
+        cmap = int(value.split()[0])
+        if cmap in seen:
+            continue
+        seen.add(cmap)
+        stream = doc.xref_stream(cmap).decode('ascii')
+        def section(match):
+            mode = match.group(1)
+            def row(line):
+                tokens = list(re.finditer(r'<([0-9a-fA-F]+)>', line))
+                skip = 1 if mode == 'char' else 2
+                for token in reversed(tokens[skip:]):
+                    value = token.group(1)
+                    if len(value) == 4 and 0xF6B1 <= int(value, 16) <= 0xF6BA:
+                        digit = int(value, 16) - 0xF6B1
+                        line = line[:token.start(1)] + f'{0x30 + digit:04x}' + line[token.end(1):]
+                return line
+            return 'beginbf' + mode + ''.join(row(line) for line in match.group(2).splitlines(True)) + 'endbf' + mode
+        updated = re.sub(r'beginbf(char|range)(.*?)endbf\1', section, stream, flags=re.S)
+        # Noto's proportional digit CIDs have no ToUnicode entry at all;
+        # extraction falls back to the CID (U+F6B1 ... U+F6BA).
+        _, basefont = doc.xref_get_key(xref, 'BaseFont')
+        _, encoding = doc.xref_get_key(xref, 'Encoding')
+        if 'Noto' in basefont and encoding == '/Identity-H':
+            aliases = '\n10 beginbfchar\n' + ''.join(
+                f'<{0xF6B1 + digit:04x}> <{0x30 + digit:04x}>\n' for digit in range(10)) + 'endbfchar\n'
+            updated = updated.replace('endcmap', aliases + 'endcmap')
+        if updated != stream:
+            doc.update_stream(cmap, updated.encode('ascii'))

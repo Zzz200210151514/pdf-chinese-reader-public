@@ -15,7 +15,7 @@ from core.validator import protected_pixel_level
 from core.classifier import BODY_FONT_FLOOR, body_font_floor_applies, clamp_body_font
 from pdf_colors import capture_separation_tints, restore_separation_tints
 from pdf_layout import validate_layout
-from pdf_fonts import FontCoverage, scientific_symbols
+from pdf_fonts import FontCoverage, scientific_symbols, canonicalize_digit_cmaps
 
 class Plain(HTMLParser):
     def __init__(self, text):
@@ -163,7 +163,7 @@ def _raise_scale_to_floor(item):
 
 def micro_region(item):
     """Only small standalone inline objects may use the micro fitting floor."""
-    if item.get('block_type') in ('title','heading','abstract') or len(item.get('source_block_ids',[]))>1:
+    if body_font_floor_applies(item) or item.get('block_type') in ('title','heading','abstract') or len(item.get('source_block_ids',[]))>1:
         return False
     text=''.join(Plain(item['html']).text().split())
     box=fitz.Rect(item['rect'])
@@ -199,6 +199,7 @@ def check_layout(source,m,fontdir):
                     issues.append({'page':n,'id':ident,'check':'missing-glyph','characters':missing,
                                    'action':'Provide a covering fonts.fallback or explicit sub/sup markup; do not emit tofu glyphs.'})
                     continue
+                orig_size,orig_min_scale=item.get('size'),item.get('min_scale')
                 if body_font_floor_applies(item):
                     item['size']=clamp_body_font(item.get('size',9.35), item)
                     _raise_scale_to_floor(item)
@@ -259,7 +260,10 @@ def check_layout(source,m,fontdir):
                     else:item['min_scale']=original_min
                 if spare<0:
                     _,needed=fit_only(item,bounds,fonts,css,archive,scale_low=0)
-                    issues.append({'page':n,'id':ident,'check':'overflow','suggested_font_pt':round(float(item.get('size',9.35))*needed,2),
+                    suggested_pt=round(float(item.get('size',9.35))*needed,2)
+                    if orig_size is not None:item['size']=orig_size
+                    if orig_min_scale is not None:item['min_scale']=orig_min_scale
+                    issues.append({'page':n,'id':ident,'check':'overflow','suggested_font_pt':suggested_pt,
                                    'action':'Review spacing or enlarge/reflow the region; do not delete text or blindly accept a tiny font.'})
                 else:
                     item['_fit_scale']=scale
@@ -311,7 +315,7 @@ def _unify_paragraph_typography(manifest, fonts, css, archive, fits, warnings, i
         target=min(rendered)
         # A merged paragraph inherits one size. Body copy stops at 9 pt even
         # when one box was fitted from a smaller source size.
-        body_floor=all(body_font_floor_applies(m) for m in members)
+        body_floor=any(body_font_floor_applies(m) for m in members)
         if body_floor:
             target=max(BODY_FONT_FLOOR, target)
         leading=min(float(m.get('leading',1.17)) for m in members)
@@ -425,6 +429,7 @@ def build(args):
     if len(set(source_pages))!=len(source_pages):raise ValueError('Duplicate source pages')
     page_map={n:i for i,n in enumerate(source_pages)}
     doc=document_copy(source,source_pages)
+    first_generated_xref=doc.xref_length()
     source_toc=doc.get_toc(simple=False)
     checks=[]; protected=[]; mutated=[];color_repairs=[];restored_links=0;restored_default_spaces=0
     for pn,spec in enumerate(specs):
@@ -526,6 +531,7 @@ def build(args):
         doc.set_metadata(metadata)
         aligned_author_year_links=align_author_year_links(original,doc,source_pages)
         _, _ttc_sub, _ = _prepare_archive_fonts(m, resolve_fonts(m.get('fonts'),fontdir), fontdir)
+        canonicalize_digit_cmaps(doc, first_generated_xref)
         if not _ttc_sub: doc.subset_fonts()
         doc.save(target,garbage=4,deflate=True);doc.close()
     saved=fitz.open(target)
