@@ -92,11 +92,23 @@ def _prepare_archive_fonts(m, fonts, fontdir):
         updated[role] = str(out_file)
     return updated, True, str(out_dir)
 
+def anchor_color_rule(manifest):
+    """CSS colour for anchors that have no inline style.
+
+    Uses the paper's sampled link blue. Missing or non-hex values add no colour,
+    so the stylesheet never invents pure ``#0000ff``.
+    """
+    link = manifest.get('link_blue') if isinstance(manifest, dict) else None
+    if isinstance(link, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', link):
+        return f'color:{link.lower()};'
+    return ''
+
+
 def style(m, fontdir):
     fonts, _ttc_sub, _sub_dir = _prepare_archive_fonts(m, resolve_fonts(m.get('fonts'),fontdir), fontdir)
     reg = Path(fonts['regular']).name if Path(fonts['regular']).is_file() else fonts['regular']
     bld = Path(fonts.get('bold', fonts['regular'])).name if Path(fonts.get('bold', fonts['regular'])).is_file() else fonts.get('bold', fonts['regular'])
-    css=f"@font-face{{font-family:Body;src:url('{reg}')}}@font-face{{font-family:Body;src:url('{bld}');font-weight:bold}}*{{margin:0;padding:0}}body{{font-family:Body}}sup,sub{{font-size:70%}}a{{color:#0000ff;text-decoration:none}}"
+    css=f"@font-face{{font-family:Body;src:url('{reg}')}}@font-face{{font-family:Body;src:url('{bld}');font-weight:bold}}*{{margin:0;padding:0}}body{{font-family:Body}}sup,sub{{font-size:70%}}a{{{anchor_color_rule(m)}text-decoration:none}}"
     css+='p{margin:0;padding:0}body{margin:0;padding:0}'
     fallback=fonts.get('fallback') or fonts.get('symbol')
     if fallback:
