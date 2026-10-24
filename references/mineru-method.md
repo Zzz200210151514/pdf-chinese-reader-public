@@ -1,80 +1,35 @@
-# MinerU 法：结构提取与双栏中文重排
+# MinerU 提取（统一流水线的前端）
 
-独立于原位翻译的第二种用法。用户说“MINERU法 / MinerU法 / 用MinerU重排”，或明确接受中文重新分页时使用。原位法仍由 `translator_v4.py` 执行；其 `--extractor mineru` 只增加提取资产，不等于本模式。
+MinerU 和本地 PyMuPDF 只在 `prepare` 分流。两者都写出同一份 `source_map.json`，然后走 `translator_v4.py` 的 `plan` → 翻译（Router、术语、缓存）→ `finish` 原位渲染。没有第二条 HTML/Chromium 重排流水线。`scripts/reflow_reader.py` 只保留弃用提示，并在仍被调用时转到这条流水线。
 
-MinerU 负责识别结构，翻译沿用用户指定的模型；不因本模式自动切换 Luna、调用付费翻译接口或分派代理。只说“试试”先做2–4页，明确指定全文则处理全文。已有样式反馈和上传授权继续沿用，不重复确认。
-
-## 版式与翻译
-
-- 期刊特征从原稿复用：刊名、出版标识/封面、首页信息分区和正文页眉；页面比例、栏宽及图文大致位置参考原稿。原稿不存在的元素不补造。中文按可读性自然续栏、换页，不以逐像素匹配为验收目标。
-- 保留接近原稿的双栏论文感，允许自然续栏、换页；标题、摘要和宽图表可通栏。按用户偏好默认微软雅黑，正文9.5pt、行高1.45，摘要9pt，图表题8.2pt，仅编号标签加粗。字体不可用时用合适的无衬线中文字体替代并说明，不静默换成宋体。原图、公式及原稿期刊标识保留原字体。
-- 正文不反复插入“原文第几页”“返回首次引用处”等提示。参考文献编号本身承担返回交互。原稿公式裁图与文字间距紧凑，避免字号明显失衡。
-- 先核对跨栏、跨页和图表浮动打断的段落，按完整句子/段落组织中文，再分配到来源ID。不要把英文碎片逐个直译后机械拼接。保留限定条件、否定、数值、证据强度和术语；表达自然不等于自由改写。
-- 保留图表/公式原图，图题/表题翻译；图内标注和表格单元格默认保持原文，交付时说明。清理裁断的英文表题残边时不得删除表头、单元格、坐标轴、公式或子图。
-
-## 提取与准备
-
-主入口：实际安装技能目录下的 `scripts/reflow_reader.py`，以下命令在该目录执行。依赖Python、PyMuPDF；双栏另需本地Playwright/Chromium，排版时禁止页面网络请求。上传授权、凭据和缓存见 [mineru.md](mineru.md)。不上传至其他排版服务。
+## 默认 `--extractor auto`
 
 ```powershell
-python -X utf8 scripts/reflow_reader.py prepare --source input.pdf --work work/mineru --mineru-cli "<已安装的原生MinerU可执行文件>"
+python -X utf8 scripts/translator_v4.py prepare --source paper.pdf --work work/paper
 ```
 
-已有成功提取时用 `--extract-json <content-list.json>`，核对原稿/JSON哈希与提取报告，不重新上传。接受顶层数组、0起始 `page_idx`、0–1000 `bbox`。`chart` 多子图和 `ref_text` 做内存适配，原服务文件不改写；未明确成组的图加审核标记，不猜测合并或丢弃。
+`auto` 接受显式的 `auto`、`mineru`、`local`：
 
-检查 `manifest.json` 与 `pending-jobs.json`：
+- 已配置 `MINERU_API_KEY`、`MINERU_TOKEN`，或凭据文件（`MINERU_TOKEN_FILE`、`~/.config/pdf-chinese-reader/mineru-token`，Windows 凭据管理器仍可用）时，运行 MinerU。
+- 没有凭据，或 MinerU 调用/提取失败时，在 `source_map.json` 的 `extraction.warnings` 记一条非阻断警告，并自动改用 `local`。`prepare` 不因此失败。
+- 显式 `--extractor mineru` 失败时仍报错，不悄悄改用本地结果。显式 `--extractor local` 不调用 MinerU。
 
-- 原PDF为基准，原生文字用于核对OCR。核对图表归属和图/表/公式编号，尤其是附录字母编号、续表与单独抽出的公式编号。重复公式编号仅保留在其公式的显示位置。
-- 图表和公式从原PDF裁图；表格有可验证的原生顶端横线、且不删表头/单元格时，清理上方英文表题残边。实际 `crop_rect`、尺寸、哈希入清单。
-- `mineru-text-empty` 常是续段；对照原PDF记录决定，不能盲目删除或重复沿用OCR合并文本。
-- 参考文献保留英文与编号；缺失补充附件不制造内部目标。模型不确定的子图归属或编号先核实。
+凭据、上传授权和缓存见 [mineru.md](mineru.md)。
 
-## 翻译与完整段落
+## 有文字层：MinerU 结构 + PyMuPDF 字形
 
-`translations.json` 为 `{块ID: 中文}`，支持 `sub/sup/b/strong/i/em/br`。禁止残留原始LaTeX和占位符；不等号 `<`、`>` 保持科学文字含义。
+MinerU 的内容列表决定块类型（正文、标题、公式、表、图/图注）、段落分组和阅读顺序。对应区域里只要还有原生文字，擦除框、`source_text` 和字号就锚定 PyMuPDF 的 span/字形，不用 MinerU 的粗 bbox 代替红区。跨框句子仍按 MinerU 段落合成一个逻辑段，再按框面积流回各物理框。
 
-`reviews.json` 支持以下有依据的决定：
+## 扫描页：OCR 文本直接进入来源清单
 
-- `preserve: true` 加 `note`：保留作者、书目等；识别出的书目默认保留原文。
-- `translation_in: "首块ID"` 加 `note`：翻译前把来源碎片组成完整段落，只在首块提交整段译文，续块ID仍计来源覆盖。目标必须是先前正文段，不能成链/成环；新任务优先用这种方式。
-- `join_previous: true` 或 `join_to: "先前正文ID"` 加 `note`：兼容已译碎片；合并后核对中文语序，不把割裂分句当成正常分页。
-- `omit_reason`：仅用于核实的装饰或有明确承载位置的重复编号，科研内容不得省略。
+某一页或区域没有可抽取文字层，而 MinerU 给出了 OCR 文本和 bbox 时，用反算到页面坐标后的 bbox 和 OCR 文本新建 `source_map` 块（`origin: mineru-ocr`）。这样扫描件也进入同一条 `translator_v4.py` 流水线。该页原先的 `no-extractable-text` 待审项随之移除，改在 `extraction.warnings` 里说明来源是 OCR。
 
-子图位置必须核实。例如已看过一幅3列×2行图后，其审核可以写：
-
-```json
-{"图块ID":{"note":"已对照原图核实子图位置","panels":{"d":[0,0.5,0.333333,1]}}}
-```
-
-这是裁图内部0–1坐标 `[x0,y0,x1,y1]`，不能套给其他图。未核实的子图引用可落到正确整图并说明定位粒度，不得声称精确定位子图。
-
-## 出稿与双向引用
+## 之后的步骤与本地提取相同
 
 ```powershell
-python -X utf8 scripts/reflow_reader.py finish --work work/mineru --translations work/mineru/translations.json --reviews work/mineru/reviews.json --layout double --output outputs/reader.zh.pdf --html-output outputs/reader.zh.html
+python -X utf8 scripts/translator_v4.py plan --work work/paper --reviewed
+python -X utf8 scripts/translator_v4.py translate --work work/paper
+python -X utf8 scripts/translator_v4.py finish --work work/paper --translations work/paper/translations.json --reviewed --output outputs/paper.zh.pdf --font-dir C:/Windows/Fonts
 ```
 
-单栏按明确需要选择 `--layout single`。`reflow_links.py` 是公共导航模块，不依赖某篇论文、固定图号、工作目录或翻译提供者。
-
-必须保留的交互：
-
-1. 正文文献引用 → 对应书目条目。
-2. **点击条目前面的 `[N]` 编号本身 → 正文引用处**，不能仅用旁边的返回箭头替代。PDF静态返回首次引用；HTML记住最近进入文献前的位置，并提供逐层返回。
-3. 图、表、公式和附录编号 → 对应实际对象。已提供子图坐标时，图3d这类引用落到相应子图。列表/范围不与实验数值、化学电荷混淆。
-4. 原图表内的数字文献引用也提供热点；题录的真实网址沿用原稿，不补造DOI。
-
-PDF落点从**最终PDF的实际字形与原图像哈希/坐标**建立。图外空锚点、排版前坐标、“目标页存在”均不能代替落点核对。跨栏/换页后对象移动，链接要跟随实际内容。
-
-PDF的正文引用、图表/公式引用及书目返回编号要显示清晰链接色，优先复用原稿蓝色。排版阶段先给对应文字着色，最终坐标确定后再挂接热点；只添加透明热点不算完成颜色要求。离线HTML沿用同一颜色。
-
-## 验收与维护
-
-默认按 [主技能已确认的阅读版标准](../SKILL.md#已确认的默认阅读版标准2026-10-20) 交付；这是用户已接受的宽松排版程度，原位法也共用同一阅读质量标准。允许适度调整段落区域、自然续栏和换页，页数与图文位置可变化；普通留白、孤行和轻微渲染差异不触发重建或再次征求排版许可。内容完整、科学信息正确、图表清楚及双向引用可用仍为必要要求。
-
-`finish` 检查缺译、来源异常、原稿/裁图哈希、译文检出、媒体尺寸和页面越界。跨栏图落到页底外时集中做一次分页修正，仍异常则处理具体对象；不无限重试，不把图缩成小点。
-
-核对实际阅读：段落连贯、字体/公式协调、图文易对应，无裁断标题残边。普通留白、自然分页与轻微像素差异沿用主技能容差，不扩展为逐页精修。
-
-引用验收确认最终文件的实际位置与编号。首次接入、修改引用实现或收到跳转反馈时，实际完成一次“正文→文献→点编号回正文”；日常任务复用已验证流程，不为普通排版差异重复手动点击或逐页巡视。不只统计链接数。`delivery.json` 记录前向链接、编号返回、图表/子图目标、图内引用、未被引用书目和落点依据；自动检查不代表翻译准确率。
-
-维护源码时运行 `tests/test_reflow_reader.py` 与 `tests/test_reflow_links.py`，覆盖编号本身返回、跨页子图坐标、HTML真实点击、完整段落合并和不等式保留。普通翻译不重复跑开发测试。调整字体或跳转复用提取与译文，语言问题只精修相应完整段落。
+字体、行距、逻辑段统一字号和验收标准见 [pdf-fonts.md](pdf-fonts.md) 与 [SKILL.md](../SKILL.md)。不要再调用 `reflow_reader.py finish`，也不要为双栏另装 Playwright。

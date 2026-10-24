@@ -5,6 +5,14 @@ import json
 import re
 import yaml
 
+# English phrases that legitimately introduce a normally forbidden Chinese word.
+# `flow rate` may be translated 流量 next to flux/通量; `repulsion` may be 排斥
+# next to rejection/截留率. An entry may override this with `counterparts`.
+FORBIDDEN_COUNTERPARTS = {
+    '流量': ('flow rate', 'flowrate', 'volumetric flow'),
+    '排斥': ('repulsion', 'repulsive'),
+}
+
 
 class Glossary:
     def __init__(self, directory=None):
@@ -27,10 +35,30 @@ class Glossary:
                 translation = translation.replace(variant, e['target'])
         return translation
 
+    def _counterpart_in_source(self, source, entry, word):
+        listed = (entry.get('counterparts') or {}).get(word) or FORBIDDEN_COUNTERPARTS.get(word, ())
+        for phrase in listed:
+            if re.search(r'(?<!\w)' + re.escape(phrase) + r'(?!\w)', source, re.I):
+                return True
+        return False
+
     def validate(self, source, translation, domain='chemistry'):
+        """Flag forbidden renderings without hard-blocking a paragraph that already complies.
+
+        If the expected target is already in the translation, or the source also
+        uses the English counterpart of the forbidden word, the co-occurrence is
+        not an issue. Any remaining hit is a warning, not a hard failure.
+        """
         issues = []
         for e in self.inspect(source, domain):
+            target = e.get('target') or ''
+            if target and target in translation:
+                continue
             for word in e.get('forbidden', []):
-                if word in translation:
-                    issues.append({'source': e['source'], 'forbidden': word, 'expected': e['target'], 'domain': domain})
+                if word not in translation:
+                    continue
+                if self._counterpart_in_source(source, e, word):
+                    continue
+                issues.append({'source': e['source'], 'forbidden': word, 'expected': target,
+                               'domain': domain, 'severity': 'warning'})
         return issues

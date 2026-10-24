@@ -65,11 +65,11 @@ class StructureTests(unittest.TestCase):
             with self.assertRaises(LayoutError):plan(t,{'provider':'host'},True)
             self.assertFalse((Path(t)/'jobs.json').exists())
     def test_specific_review_and_stale_plan(self):
-        m=mapping();m['issues']=[{'id':'r','page':1,'check':'caption-candidate-without-geometry'}]
+        m=mapping();m['issues']=[{'id':'r','page':1,'check':'formula-with-prose-candidate'}]
         with tempfile.TemporaryDirectory() as t:
             path=Path(t)/'source_map.json';write(path,m)
             with self.assertRaises(LayoutError):plan(t,{'provider':'host'},True)
-            m['review_resolutions']={'r|caption-candidate-without-geometry|1':'Reviewed original: prose reference to a figure.'};write(path,m)
+            m['review_resolutions']={'r|formula-with-prose-candidate|1':'Reviewed original: prose line wrap, not a displayed equation.'};write(path,m)
             self.assertTrue(plan(t,{'provider':'host'},True))
             m['blocks'][0]['rect'][1]+=1;write(path,m)
             with self.assertRaises(LayoutError):translate(t,{'provider':'host'})

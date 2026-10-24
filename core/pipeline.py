@@ -1,10 +1,12 @@
 """Five-layer workflow: local parsing, classification, routing, terminology, rebuild."""
-import json,subprocess,sys,hashlib,shutil,re
+import json,hashlib,shutil,re
 from pathlib import Path
 from copy import deepcopy
 import pymupdf as fitz
 from .pdf_reader import parse
 from .classifier import classify
+from .paragraphs import link_paragraphs, load_mineru_items
+from .mineru_hybrid import extract_with_mineru, fuse_mineru, mineru_configured
 from .layout import compile_layout,LayoutError
 from .rebuild import rebuild,legacy
 from .validator import validate
@@ -70,7 +72,7 @@ def glyph_report(mapping,translations,config,font_dir):
         if missing:report[bid]=missing
     return report
 
-def prepare(source,work,config=None,extractor='local',mineru_cli=None,force=False):
+def prepare(source,work,config=None,extractor='auto',mineru_cli=None,force=False,*,reuse_extraction=False):
     work=Path(work);log=RunLog(work)
     # A2: never silently discard a reviewed map or frozen plan. Re-running prepare
     # would overwrite review_resolutions; require an explicit force to start fresh.
@@ -93,15 +95,41 @@ def prepare(source,work,config=None,extractor='local',mineru_cli=None,force=Fals
             if not stable.exists():
                 temporary=work/'source.pdf.tmp';shutil.copyfile(source,temporary);temporary.replace(stable)
         source=stable
-    with log.stage('parse',extractor=extractor,source_sha256=source_sha256):inspection=parse(source,work/'inspect')
+    requested=(extractor or 'auto').lower()
+    if requested not in {'auto','mineru','local'}:raise ValueError('Unknown extraction mode')
+    notes=[]
+    mode=requested
+    if requested=='auto':
+        if mineru_configured():mode='mineru'
+        else:
+            mode='local'
+            notes.append({'check':'mineru-not-configured','severity':'warning',
+                          'detail':'No MINERU_API_KEY, MINERU_TOKEN, or token file; local extraction used.'})
+    with log.stage('parse',extractor=requested,source_sha256=source_sha256):inspection=parse(source,work/'inspect')
     write(work/'inspect/source.json',inspection)
-    if extractor=='mineru':
-        command=[sys.executable,'-X','utf8',str(Path(__file__).resolve().parents[1]/'scripts/mineru_extract.py'),
-                 '--source',str(source),'--output',str(work/'extraction'),'--mode','precision']
-        if mineru_cli:command+=['--cli',str(mineru_cli)]
-        with log.stage('mineru'):subprocess.run(command,check=True)
-    elif extractor!='local':raise ValueError('Unknown extraction mode')
-    with log.stage('classify'):mapping=classify(inspection)
+    used=mode
+    if mode=='mineru':
+        staged=reuse_extraction and bool(load_mineru_items(work/'extraction'))
+        if staged:
+            ok,detail=True,''
+        else:
+            with log.stage('mineru'):ok,detail=extract_with_mineru(source,work/'extraction',mineru_cli)
+        if not ok:
+            if requested=='auto':
+                used='local'
+                notes.append({'check':'mineru-fallback','severity':'warning','detail':detail or 'MinerU extraction failed; local extraction used.'})
+            else:raise ValueError(detail or 'MinerU extraction failed')
+    with log.stage('classify'):
+        mapping=classify(inspection)
+        if used=='mineru':
+            report=fuse_mineru(mapping, work/'extraction')
+            if not report.get('applied'):
+                notes.append({'check':'mineru-structure-missing','severity':'warning',
+                              'detail':report.get('reason') or 'MinerU content list missing; geometric paragraphs used.'})
+                link_paragraphs(mapping, None)
+                used='local'
+        else:link_paragraphs(mapping, None)
+    mapping['extraction']={'requested':requested,'extractor':used,'warnings':notes}
     mapping['source_path']=str(Path(source).resolve())
     mapping['source_sha256']=source_sha256
     mapping['workflow_version']='4.1'
@@ -161,9 +189,16 @@ def resolve_issue(work,issue_key,note,config=None):
                                  'ready_to_dispatch':gate['ready_to_dispatch'],
                                  'blocking_count':sum(i['severity']=='blocking' for i in gate['issues']),
                                  'review_required_count':sum(i['severity']=='review-required' for i in gate['issues'])})
-    jobs=plan(work,config,reviewed=True)
-    log.event('resolve','completed',issue_key=issue_key,jobs=len(jobs))
-    return {'resolved':issue_key,'note':note,'map_frozen':True,'jobs':len(jobs),
+    # Resolving one of N issues must exit cleanly. Freeze the plan only when
+    # nothing review-required remains; otherwise the caller still has work.
+    jobs=[]
+    frozen_now=False
+    if gate['ready_to_dispatch']:
+        jobs=plan(work,config,reviewed=True)
+        frozen_now=True
+    log.event('resolve','completed',issue_key=issue_key,jobs=len(jobs),map_frozen=frozen_now)
+    return {'resolved':issue_key,'note':note,'map_frozen':frozen_now,'jobs':len(jobs),
+            'ready_to_dispatch':gate['ready_to_dispatch'],
             'remaining_review':sum(1 for i in gate['issues'] if i['severity']=='review-required')}
 
 def translate(work,config=None,translations=None,font_dir=None):
@@ -221,7 +256,8 @@ def finish(source,work,output,font_dir,translations=None,config=None,reviewed=Fa
         # Explicit, newly supplied revisions take priority over a previous cache.
         router=make_router(config,work,log)
         if supplied is not None:
-            expected={b['id'] for b in mapping['blocks'] if b.get('translation_required',True)}
+            # Continuation boxes are covered by the anchor's logical translation.
+            expected={b['id'] for b in mapping['blocks'] if b.get('translation_required',True) and not b.get('translation_in')}
             if set(supplied)!=expected:raise ValueError('Translations do not cover the full reviewed source map')
             result=router.translate(mapping,supplied=supplied)
         else:result=router.translate(mapping)
@@ -232,8 +268,12 @@ def finish(source,work,output,font_dir,translations=None,config=None,reviewed=Fa
         titles=[b['translation'] for b in merged['blocks'] if b.get('type')=='title' and b.get('translation')]
         if titles:merged['title']=' '.join(titles)
         write(work/'merged.json',merged)
+        translation_warnings=[dict(r) for r in router.records if r.get('severity')=='warning' or r.get('status')=='warning']
     with log.stage('layout'):
         manifest=compile_layout(merged,fonts=resolve_fonts(fonts or mapping.get('fonts') or load_config(config).get('fonts'),font_dir))
+        if translation_warnings:
+            manifest.setdefault('warnings', [])
+            manifest['warnings']=[*manifest['warnings'], *translation_warnings]
         write(work/'layout.json',manifest)
     # The proven writer performs and saves preflight before touching the source.
     # Running the same fit calculation here again doubles this stage's work.

@@ -116,9 +116,10 @@ class PipelineFixtureTests(unittest.TestCase):
                     # retaining source separators and every frozen token.
                     translations = {}
                     for block in mapping["blocks"]:
-                        if not block.get("translation_required", True):
+                        if not block.get("translation_required", True) or block.get("translation_in"):
                             continue
-                        translations[block["id"]] = mock_translation(block["source_text"])
+                        # A cross-box paragraph is one translation of the merged source.
+                        translations[block["id"]] = mock_translation(block.get("logical_source") or block["source_text"])
                     translations_path = run_dir / "mock-translations.json"
                     write(translations_path, translations)
 
@@ -174,7 +175,14 @@ class PipelineFixtureTests(unittest.TestCase):
                     results.append(record)
 
         completed = utc_now()
-        REPORT.parent.mkdir(parents=True, exist_ok=True)
+        report_path = REPORT
+        try:
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            # A checkout that is not nested under the author's workspace still
+            # records the run; the fixture assertions do not depend on that path.
+            report_path = Path(tempfile.gettempdir()) / "v4-upgrade" / "pipeline-fixtures-report.json"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
         current_run = {
             "started_utc": started,
             "ended_utc": completed,
@@ -185,7 +193,7 @@ class PipelineFixtureTests(unittest.TestCase):
                 "failed": sum(item["status"] != "passed" for item in results),
             },
         }
-        REPORT.write_text(
+        report_path.write_text(
             json.dumps(
                 {
                     "test": "prepare → simulated source-map review → frozen-token Chinese mock translations → finish",
@@ -205,7 +213,7 @@ class PipelineFixtureTests(unittest.TestCase):
         self.assertFalse(
             failures,
             "Pipeline fixture failures (full tracebacks are in "
-            f"{REPORT}):\n"
+            f"{report_path}):\n"
             + "\n".join(
                 f"{item['fixture']}: {item.get('error_type')}: {item.get('error')}"
                 for item in failures

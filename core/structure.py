@@ -16,7 +16,8 @@ def fingerprint(mapping):
     fields = ('source_sha256', 'pages', 'expected_block_ids', 'targets', 'references', 'review_resolutions', 'issues')
     data = {k: mapping.get(k) for k in fields}
     keys = ('id', 'source_page', 'rect', 'source_text', 'type', 'translation_required',
-            'preservation_reason', 'role', 'inline_fragment_of', 'original_ids', 'paragraph_start', 'size')
+            'preservation_reason', 'role', 'inline_fragment_of', 'original_ids', 'paragraph_start', 'size',
+            'logical_paragraph_id', 'translation_in')
     data['blocks'] = [{k: b.get(k) for k in keys} for b in mapping['blocks']]
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
@@ -139,19 +140,27 @@ def preflight(mapping, inspection=None):
             box=r['bbox']
             if not any(n['rect'][0]<=box[0]+.01 and n['rect'][1]<=box[1]+.01 and n['rect'][2]>=box[2]-.01 and n['rect'][3]>=box[3]-.01 for n in protections):
                 add('unprotected-source-image',id=r['id'],page=r['page'],rect=box,action='Restore complete original-image protection before dispatch.')
-        def chars(s):return Counter(re.sub(r'\s+','',s))
+        def chars(s):
+            # Pre-tagged <sup>/<sub> are extraction markup, not extra source characters.
+            s = re.sub(r'</?(?:sup|sub|i|b|a)\b[^>]*>', '', s, flags=re.I)
+            return Counter(re.sub(r'\s+', '', s))
         for r in inspection.get('records',[]):
             if not r.get('text','').strip():continue
             fragments=[b['source_text'] for b in mapping['blocks'] if r['id'] in b.get('original_ids',[b['id']])]
             if chars(r['text'])!=chars(''.join(fragments)):
                 add('source-text-coverage',id=r['id'],page=r['page'],rect=r['bbox'],action='Restore missing or duplicated original text fragments before dispatch.')
     # Review decisions are specific to an issue, not a blanket --reviewed bypass.
+    # Routine classifier candidates are suggestions. They must not stop plan;
+    # a reviewer can still record a decision, but dispatch does not wait on them.
+    BENIGN_REVIEW = {'inline-fragment-placement', 'caption-candidate-without-geometry',
+                     'bibliography-continuation-candidate'}
     resolutions = mapping.get('review_resolutions', {})
     for i, issue in enumerate(mapping.get('issues', [])):
         key = issue.get('id', '')+'|'+issue['check']+'|'+str(issue.get('page', ''))
         decision = resolutions.get(key)
+        benign = issue.get('check') in BENIGN_REVIEW
         issues.append({**issue, 'issue_key': key,
-                       'severity': 'warning' if decision else 'review-required',
+                       'severity': 'warning' if decision or benign else 'review-required',
                        'resolution': decision or None})
     order = source_order(mapping)
     return {'passed': not any(i['severity'] == 'blocking' for i in issues),

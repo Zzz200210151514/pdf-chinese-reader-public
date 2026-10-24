@@ -9,7 +9,8 @@ from core import engine_identity
 def main():
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='command',required=True)
     a=sub.add_parser('prepare');a.add_argument('--source',required=True);a.add_argument('--work',required=True)
-    a.add_argument('--config');a.add_argument('--extractor',choices=['local','mineru'],default='local');a.add_argument('--mineru-cli')
+    a.add_argument('--config');a.add_argument('--extractor',choices=['auto','mineru','local'],default='auto',
+                   help='auto runs MinerU when a token is configured and falls back to local');a.add_argument('--mineru-cli')
     a.add_argument('--force',action='store_true',help='overwrite an existing reviewed/frozen work directory')
     a=sub.add_parser('finish');a.add_argument('--source',help='original PDF; defaults to the work/source.pdf snapshot')
     a.add_argument('--work',required=True)
@@ -27,8 +28,10 @@ def main():
         m,jobs=prepare(args.source,args.work,args.config,args.extractor,args.mineru_cli,force=args.force)
         from core.pipeline import read
         review=read(Path(args.work)/'review.json')
+        extraction=m.get('extraction') or {}
         print(json.dumps({'engine':engine_identity(),'jobs':len(jobs),'blocks':len(m['blocks']),'need_review':review['need_review'],
                           'blocking_count':review['blocking_count'],'review_required_count':review['review_required_count'],
+                          'extractor':extraction.get('extractor'),'extraction_warnings':extraction.get('warnings') or [],
                           'next_step':'review source map then plan','source_snapshot':str(Path(args.work)/'source.pdf'),'work':args.work},ensure_ascii=False))
     elif args.command=='plan':
         jobs=plan(args.work,args.config,args.reviewed)

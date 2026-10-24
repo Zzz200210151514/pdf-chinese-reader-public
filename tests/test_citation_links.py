@@ -62,13 +62,28 @@ class CitationLinks(unittest.TestCase):
         self.assertIn('invalid/ref/12',_markup(text,{'ref/12'},colours,tokens))
 
     def test_pdf_renderer_preserves_anchor_colour_and_link(self):
+        import tempfile
         import pymupdf as fitz
         import importlib.util
         spec=importlib.util.spec_from_file_location('citation_pdf_writer',Path(__file__).resolve().parents[1]/'scripts/pdf_reader.py')
         sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
         writer=importlib.util.module_from_spec(spec);spec.loader.exec_module(writer)
-        css,archive=writer.style({},'C:/Windows/Fonts')
-        marked,tokens,colours,issues=restore_citations('Evidence 12',native(),{'ref/12'})
+        windows = Path('C:/Windows/Fonts')
+        if (windows / 'msyh.ttc').is_file():
+            css, archive = writer.style({}, str(windows))
+            self._assert_citation_colour(fitz, css, archive)
+            return
+        # Linux agents have no Microsoft YaHei. The colour lives in the link
+        # markup; any face that can draw the digits is enough to read it back.
+        with tempfile.TemporaryDirectory() as directory:
+            font_dir = Path(directory)
+            (font_dir / 'msyh.ttc').write_bytes(fitz.Font('cjk').buffer)
+            css, archive = writer.style(
+                {'fonts': {'regular': 'msyh.ttc', 'bold': 'msyh.ttc', 'fallback': None}}, str(font_dir))
+            self._assert_citation_colour(fitz, css, archive)
+
+    def _assert_citation_colour(self, fitz, css, archive):
+        marked, tokens, colours, issues = restore_citations('Evidence 12', native(), {'ref/12'})
         with fitz.open() as doc:
             page=doc.new_page()
             page.insert_htmlbox(fitz.Rect(40,40,350,100),_markup(marked,{'ref/12'},colours,tokens),css=css,archive=archive)

@@ -10,7 +10,7 @@ from copy import deepcopy
 import hashlib
 import re
 
-from .pdf_reader import block_text, records_from_pages, stable_id, visible_line_bbox
+from .pdf_reader import block_text, records_from_pages, script_markup, stable_id, visible_line_bbox
 
 CAPTION = re.compile(r"^(?P<kind>Fig(?:ure)?\.?|Table)\s*(?P<number>\d+)\s*(?:[.:|]|[–—-])\s+", re.I)
 REF_HEAD = re.compile(r"^(?:references(?: and notes)?|bibliography)\s*[.:]?\s*$", re.I)
@@ -30,11 +30,12 @@ def native_micro_fragment(text, rect):
 
     These blocks are too small for translated text and carry no sentence; they
     must not consume a translation slot or trigger full-width punctuation
-    overflow in the builder.
+    overflow in the builder. All-caps section headings (``1. INTRODUCTION``,
+    ``HIGHLIGHTS``, ``KEYWORDS``) are words, not formulas.
     """
     if rect[2]-rect[0] > 120 or rect[3]-rect[1] > 16:
         return False
-    compact = re.sub(r'\s+', '', text)
+    compact = re.sub(r'\s+', '', re.sub(r'<[^>]+>', '', text))
     if not compact or len(compact) > 20 or compact.lower() in MICRO_STOPWORDS:
         return False
     if MICRO_EQ_NUMBER.fullmatch(compact):
@@ -44,10 +45,25 @@ def native_micro_fragment(text, rect):
     # Two lowercase letters in a row means a word, not a formula.
     if re.search(r'[a-z]{2,}', compact):
         return False
+    # Three capitals in a row, or a numbered section label, is an all-caps
+    # heading (INTRODUCTION, EXPERIMENTAL, RESULTS, HIGHLIGHTS, KEYWORDS).
+    if re.search(r'[A-Z]{3,}', compact):
+        return False
+    if re.match(r'\d+[.)]', compact) and re.search(r'[A-Za-z]{3,}', compact):
+        return False
     # A bare number or `[37].` is a data value/citation, not a formula; keep it
     # in the translation pipeline. Native micro content carries an element or
     # formula letter.
     return bool(re.search(r'[A-Za-z]', compact))
+
+
+def adapted_body_size(source_pt):
+    """Body size follows the source, clamped to the reading range [8.5, 9.5] pt."""
+    try:
+        source_pt = float(source_pt)
+    except (TypeError, ValueError):
+        source_pt = 9
+    return min(9.5, max(8.5, round(source_pt * 1.05, 1)))
 
 
 def normalize_heading(text):
@@ -144,6 +160,26 @@ def reading_order(items, bounds):
     groups = column_groups([i["rect"] for i in items], bounds)
     for item, group in zip(items, groups):
         item["column"] = group
+    # MinerU reading order is the structural authority for blocks it claimed.
+    # Unclaimed leftovers sit between the claimed neighbours by vertical position.
+    if any("mineru_reading_index" in item for item in items):
+        claimed = [item for item in items if "mineru_reading_index" in item]
+        def mineru_key(item):
+            if "mineru_reading_index" in item:
+                return (item["mineru_reading_index"], 0, item["id"])
+            y = item["rect"][1]
+            before = [c["mineru_reading_index"] for c in claimed if c["rect"][1] <= y]
+            after = [c["mineru_reading_index"] for c in claimed if c["rect"][1] > y]
+            if before and after:
+                slot = (max(before) + min(after)) / 2
+            elif before:
+                slot = max(before) + 0.5
+            elif after:
+                slot = min(after) - 0.5
+            else:
+                slot = 0
+            return (slot, 1, item["id"])
+        return sorted(items, key=mineru_key)
     anchors = sorted((i for i in items if i["column"] == "full"), key=lambda i: (i["rect"][1], i["rect"][0], i["id"]))
     def key(item):
         b = item["rect"]
@@ -753,6 +789,25 @@ def classify(inspection):
                     and native_micro_fragment(entry["source_text"], entry["rect"])):
                 entry.update(type="formula", translation_required=False,
                              preservation_reason="native-micro-equation-or-formula")
+        for entry in entries:
+            # Compact 8 pt journals must not be forced to 9.5 pt with min_scale 1.
+            # Bold headings and titles keep the size chosen above.
+            if (entry.get("translation_required", True)
+                    and entry.get("type") in {"paragraph", "abstract"}
+                    and not entry.get("bold")):
+                source_pt = entry.get("source_font_pt", entry.get("size"))
+                entry["size"] = adapted_body_size(source_pt)
+                entry["min_scale"] = 0.85
+            if not entry.get("translation_required", True):
+                continue
+            marked = script_markup(entry.get("source_lines") or [])
+            if not marked:
+                continue
+            visible = re.sub(r"\s+", "", re.sub(r"</?(?:sup|sub)>", "", marked, flags=re.I))
+            current = re.sub(r"\s+", "", entry.get("source_text", ""))
+            if visible == current:
+                entry["source_text"] = marked
+                entry["source_text_sha256"] = hashlib.sha256(marked.encode()).hexdigest()
         result["blocks"].extend(entries)
         # Thin rules and decorative drawing objects can obstruct blank-space
         # allocation without being scientific figures eligible for protection.

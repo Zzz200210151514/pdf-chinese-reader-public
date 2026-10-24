@@ -1,5 +1,6 @@
 """Keep native character bounds separate from visible/layout rectangles."""
 from collections import Counter
+import unicodedata
 import pymupdf as fitz
 
 
@@ -109,8 +110,18 @@ def check_erasure_coverage(page, spec, repair=False):
     extra = (candidate-baseline)-allowed
     lost = baseline-candidate
     if extra or lost:
+        extra_n, lost_n = sum(extra.values()), sum(lost.values())
+        extra_text = ''.join(chr(key[1]) * count for key, count in extra.items())
+        punctuation = bool(extra_text) and all(
+            ch.isspace() or unicodedata.category(ch).startswith('P') or not ch.isalnum()
+            for ch in extra_text)
+        # A mask split can leave a hairline of punctuation or one or two glyphs
+        # from an adjacent span. That is not a content leak when nothing was
+        # unexpectedly removed. Real leftover words stay blocking.
+        benign = lost_n == 0 and (punctuation or extra_n <= 2)
         return [{'check': 'erase-coverage-conflict', 'page': spec['source_page'],
-                 'extra_source_characters': sum(extra.values()),
-                 'unexpected_removed_characters': sum(lost.values()),
+                 'severity': 'warning' if benign else 'blocking',
+                 'extra_source_characters': extra_n,
+                 'unexpected_removed_characters': lost_n,
                  'action': 'Native bounds conflict with prose erasure; review this page without changing the translation.'}]
     return []

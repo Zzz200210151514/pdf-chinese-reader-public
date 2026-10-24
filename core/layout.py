@@ -8,6 +8,7 @@ import re
 from .classifier import classify, column_groups, intersects, union
 from .redaction import split_masks
 from .citations import restore_citations, object_colours, canonical
+from .paragraphs import prepare_render_text
 
 
 class LayoutError(ValueError):
@@ -111,6 +112,7 @@ def compile_layout(mapping, fonts=None):
     if not mapping.get("layout_reviewed"):
         raise LayoutError([{"check": "source-map-not-reviewed"}])
     from .structure import source_order, audit_order
+    prepare_render_text(mapping)
     blocks = mapping["blocks"]
     rank = {ident: n for n, ident in enumerate(source_order(mapping))}
     ids = [b["id"] for b in blocks]
@@ -141,6 +143,7 @@ def compile_layout(mapping, fonts=None):
         if key in mapping:
             manifest[key] = mapping[key]
     issues = []
+    warnings = []
     page_ids = [p["source_page"] for p in mapping["pages"]]
     if len(page_ids) != len(set(page_ids)) or any(b["source_page"] not in page_ids for b in blocks):
         raise LayoutError([{"check": "source-page-coverage"}])
@@ -157,6 +160,8 @@ def compile_layout(mapping, fonts=None):
             box = b["rect"]
             if len(box) != 4 or box[0] >= box[2] or box[1] >= box[3] or box[0] < bounds[0] or box[1] < bounds[1] or box[2] > bounds[2] or box[3] > bounds[3]:
                 issues.append({"check": "invalid-source-rectangle", "page": pn, "id": b["id"]})
+            if b.get("absorbed"):
+                continue
             if not b.get("translation_required", True):
                 if not b.get("preservation_reason"):
                     issues.append({"check": "missing-preservation-reason", "id": b["id"]})
@@ -170,22 +175,35 @@ def compile_layout(mapping, fonts=None):
                                                  'font': span['font'], 'origin': list(span['origin']),
                                                  'text': span['text']})
                 continue
-            text = b.get("translation", "")
+            text = b.get("render_html", b.get("translation", ""))
             if not isinstance(text, str) or not text.strip():
                 issues.append({"check": "missing-translation", "id": b["id"]})
                 continue
             source_lines = b.get('source_lines', [])
+            # Continuation slices share the anchor's citation geometry so a
+            # superscript evidenced on the first box can still be restored.
+            if b.get("translation_in"):
+                anchor = next((a for a in selected if a["id"] == b["translation_in"]), None)
+                if anchor and not source_lines:
+                    source_lines = anchor.get("source_lines", [])
             text, citation_tokens, colours, citation_issues = restore_citations(text, source_lines, known)
-            issues.extend({**issue, 'id': b['id']} for issue in citation_issues)
+            for issue in citation_issues:
+                tagged = {**issue, 'id': b['id'], 'page': pn}
+                if issue.get('check') == 'citation-alignment-needs-review':
+                    warnings.append({**tagged, 'severity': 'warning'})
+                else:
+                    issues.append(tagged)
             colours = {**object_colours(source_lines, known), **colours}
             markup = _markup(scientific_markup(text, source_lines), known, colours, citation_tokens)
             html = "<b>"+markup+"</b>" if b.get("bold") else markup
-            region = {"id": b["id"], "source_block_ids": [b["id"]], "rect": list(box),
+            absorbed_ids = list(b.get("absorbs") or [])
+            source_ids = sorted({b["id"], *absorbed_ids}, key=lambda i: rank.get(i, len(rank)))
+            region = {"id": b["id"], "source_block_ids": source_ids, "rect": list(box),
                       "block_type": b.get("type", "paragraph"),
-                      "source_rects": [list(box)], "html": html,
+                      "source_rects": [list(box), *[list(r) for r in b.get("absorb_rects") or []]], "html": html,
                       "paragraph_start": b.get("paragraph_start", True),
                       "inline_fragment": b.get("role") == "inline-fragment",
-                      **{k: b[k] for k in ("size", "leading", "min_scale") if k in b}}
+                      **{k: b[k] for k in ("size", "leading", "min_scale", "source_font_pt", "logical_paragraph_id") if k in b and b[k] is not None}}
             region["parts"] = [{"rank": rank.get(b["id"], len(rank)), "html": html,
                                 "paragraph_start": region["paragraph_start"],
                                 "inline_fragment": region["inline_fragment"]}]
@@ -241,6 +259,10 @@ def compile_layout(mapping, fonts=None):
                               "size": min(a.get("size", 9.35), b.get("size", 9.35)),
                               "leading": min(a.get("leading", 1.17), b.get("leading", 1.17)),
                               "min_scale": max(a.get("min_scale", .88), b.get("min_scale", .88))}
+                    if a.get("logical_paragraph_id") and a.get("logical_paragraph_id") == b.get("logical_paragraph_id"):
+                        merged["logical_paragraph_id"] = a["logical_paragraph_id"]
+                    else:
+                        merged.pop("logical_paragraph_id", None)
                     regions[i] = merged
                     regions.pop(j)
                     changed = True
@@ -285,6 +307,7 @@ def compile_layout(mapping, fonts=None):
     for page in manifest['pages']:
         page['regions'].sort(key=lambda r: min(rank[i] for i in r['source_block_ids']))
     issues.extend(audit_order(mapping, manifest)['issues'])
+    manifest['warnings'] = warnings
     if issues:
         raise LayoutError(issues)
     return manifest

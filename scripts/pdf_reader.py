@@ -104,11 +104,14 @@ def check_layout(source,m,fontdir):
                                    'action':'Provide a covering fonts.fallback or explicit sub/sup markup; do not emit tofu glyphs.'})
                     continue
                 spare,scale=fit_only(item,bounds,fonts,css,archive)
+                body_paragraph=item.get('block_type') in ('paragraph','abstract')
                 if spare<0:
                     original_leading=float(item.get('leading',1.35))
                     plain=Plain(item['html']).text()
                     short_line=len(plain)<=120 and '<br' not in item['html'].lower()
-                    for leading in ([1.1,1.05,1.0] if short_line else [1.1,1.05]):
+                    # Body copy stops at leading 1.05; only non-body short lines may go to 1.0.
+                    ladder=[1.1,1.05] if body_paragraph else ([1.1,1.05,1.0] if short_line else [1.1,1.05])
+                    for leading in ladder:
                         if leading>=original_leading:continue
                         item['leading']=leading
                         spare,scale=fit_only(item,bounds,fonts,css,archive)
@@ -117,6 +120,28 @@ def check_layout(source,m,fontdir):
                                                     'min_scale_unchanged':item.get('min_scale',1)}
                             break
                     if spare<0:item['leading']=original_leading
+                if spare<0 and body_paragraph:
+                    # Prefer the source-adaptive size, then a uniform 0.85 floor,
+                    # over a hard overflow. Titles are not body paragraphs.
+                    source_pt=item.get('source_font_pt')
+                    if source_pt:
+                        adapted=min(9.5,max(8.5,round(float(source_pt)*1.05,1)))
+                        current=float(item.get('size',9.35))
+                        if adapted+0.05<current:
+                            item['size']=adapted
+                            spare,scale=fit_only(item,bounds,fonts,css,archive)
+                            if spare>=0:
+                                item.setdefault('fit_adjustment',{}).update(
+                                    kind='adaptive-fit',size_before=current,size_after=adapted)
+                            else:item['size']=current
+                    if spare<0 and float(item.get('min_scale',1))>0.85:
+                        original_min=float(item.get('min_scale',1))
+                        item['min_scale']=0.85
+                        spare,scale=fit_only(item,bounds,fonts,css,archive)
+                        if spare>=0:
+                            item.setdefault('fit_adjustment',{}).update(
+                                kind='adaptive-fit',min_scale_before=original_min,min_scale_after=0.85)
+                        else:item['min_scale']=original_min
                 if spare<0 and micro_region(item) and float(item.get('min_scale',1))>.75:
                     original_min=float(item.get('min_scale',1))
                     item['min_scale']=.75
@@ -130,6 +155,8 @@ def check_layout(source,m,fontdir):
                     issues.append({'page':n,'id':ident,'check':'overflow','suggested_font_pt':round(float(item.get('size',9.35))*needed,2),
                                    'action':'Review spacing or enlarge/reflow the region; do not delete text or blindly accept a tiny font.'})
                 else:
+                    item['_fit_scale']=scale
+                    item['_page']=n
                     fits.append({'page':n,'id':ident,'scale':scale,'spare_height_pt':spare})
                     if item.get('fit_adjustment'):
                         warnings.append({'check':'adaptive-fit','severity':'warning','page':n,'id':ident,
@@ -151,9 +178,68 @@ def check_layout(source,m,fontdir):
                 if any(q.intersects(r) and not (text_native and bleed(q,r)) for q in mutations):
                     issues.append({'page':n,'id':item.get('id'),'check':'protected-intersection',
                         'action':'Re-divide prose and protected objects, then rerun preflight. This local collision does not authorize a whole-document layout change.'})
-            issues.extend(check_erasure_coverage(original[n-1], spec, repair=True))
+            for issue in check_erasure_coverage(original[n-1], spec, repair=True):
+                if issue.get('severity')=='warning':warnings.append(issue)
+                else:issues.append(issue)
+    _unify_paragraph_typography(m, fonts, css, archive, fits, warnings, issues)
     return {'layout_checks_passed':not issues,'layout_contract':contract,'issues':issues,'regions':fits,
             'warnings':warnings,'blocking_count':len(issues),'warning_count':len(warnings)}
+
+def _unify_paragraph_typography(manifest, fonts, css, archive, fits, warnings, issues):
+    """One logical paragraph, including box A and box B, uses one size and leading."""
+    failed={i.get('id') for i in issues if i.get('check')=='overflow'}
+    grouped={}
+    for spec in manifest.get('pages',[]):
+        for item in spec.get('regions',[]):
+            gid=item.get('logical_paragraph_id')
+            if gid:grouped.setdefault(gid,[]).append(item)
+            else:item.pop('_fit_scale',None);item.pop('_page',None)
+    for gid, members in grouped.items():
+        if len(members)<2 or any(m.get('id') in failed for m in members):
+            for m in members:
+                m.pop('_fit_scale',None);m.pop('_page',None)
+            continue
+        before=[(round(float(m.get('size',9.35)),2), round(float(m.get('leading',1.17)),3)) for m in members]
+        rendered=[float(m.get('size',9.35))*float(m.get('_fit_scale',1) or 1) for m in members]
+        target=min(rendered)
+        leading=min(float(m.get('leading',1.17)) for m in members)
+        for m in members:
+            m['size']=round(target,2)
+            m['leading']=leading
+            m['min_scale']=1.0
+        def refit_all():
+            found=[]
+            for m in members:
+                spare,scale=fit_only(m,None,fonts,css,archive)
+                found.append((m,spare,scale))
+            return found
+        refits=refit_all()
+        if any(spare<0 for _,spare,_ in refits):
+            worst=min((scale if scale>0 else 0.85) for _,spare,scale in refits if spare<0)
+            target=round(target*max(worst,0.85),2)
+            for m in members:
+                m['size']=target
+                m['min_scale']=0.85
+            refits=refit_all()
+        for m,spare,scale in refits:
+            page=m.pop('_page',None)
+            m.pop('_fit_scale',None)
+            if spare<0:
+                issues.append({'page':page,'id':m['id'],'check':'overflow',
+                               'action':'Logical paragraph could not keep one font size and leading.'})
+                continue
+            for entry in fits:
+                if entry['id']==m['id'] and entry.get('page')==page:
+                    entry['scale']=scale
+                    entry['spare_height_pt']=spare
+        after=[(round(float(m.get('size',9.35)),2), round(float(m.get('leading',1.17)),3)) for m in members]
+        if len({a[0] for a in after})!=1 or len({a[1] for a in after})!=1:
+            issues.append({'check':'paragraph-font-mismatch','id':gid,'severity':'blocking',
+                           'action':'A logical paragraph must render at one font size and leading.'})
+        elif before!=after:
+            warnings.append({'check':'adaptive-fit','severity':'warning','id':gid,
+                             'adjustment':{'kind':'paragraph-uniform','size':after[0][0],'leading':after[0][1]}})
+
 
 def overlap(a,b):return max(0,min(a.x1,b.x1)-max(a.x0,b.x0))*max(0,min(a.y1,b.y1)-max(a.y0,b.y0))
 

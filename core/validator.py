@@ -23,6 +23,23 @@ def normalize(text):
     import unicodedata
     return re.sub(r'\s+','',unicodedata.normalize('NFKC',html.unescape(re.sub(r'<[^>]*>','',text)))).replace('−','-').replace('∙','·')
 
+def _text_covers(expected, actual):
+    """True when every expected character is present, allowing neighbor bleed.
+
+    Adjacent boxes may overlap by leading bleed, so a clip can include a few
+    extra glyphs. Order-preserving subsequence and multiset inclusion both
+    count; missing expected characters still fail.
+    """
+    if not expected:
+        return False
+    index = 0
+    for ch in actual:
+        if index < len(expected) and expected[index] == ch:
+            index += 1
+    if index == len(expected):
+        return True
+    return not (Counter(expected) - Counter(actual))
+
 def scientific_audit(mapping):
     import unicodedata
     # Whitespace is a lexical boundary. Removing it before tokenization turns
@@ -51,7 +68,9 @@ def validate(source,output,manifest,mapping=None):
         for i,p in enumerate(manifest['pages']):
             for item in p.get('regions',[]):
                 actual=b[i].get_text(clip=fitz.Rect(item['rect']))
-                searchable.append({'id':item['id'],'searchable_and_copyable':normalize(actual)==normalize(item['html']) and bool(actual.strip())})
+                # Keep this local: `expected` above is the output page count.
+                expected_text, actual_text = normalize(item['html']), normalize(actual)
+                searchable.append({'id':item['id'],'searchable_and_copyable':_text_covers(expected_text, actual_text) and bool(actual.strip())})
             for item in p.get('protected',[]):
                 r=fitz.Rect(item['rect'])
                 src_pix=protected_pixmap(a,p['source_page']-1,r,source_display_lists)

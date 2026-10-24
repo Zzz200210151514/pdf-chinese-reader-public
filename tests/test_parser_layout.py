@@ -276,7 +276,10 @@ class ParserLayoutTests(unittest.TestCase):
         self.assertTrue(next(b for b in out["blocks"] if b["source_text"] == "5. Conclusions")["translation_required"])
 
     def test_optional_real_inspection_reference_structure(self):
-        root = Path(__file__).resolve().parents[3]/"v4-upgrade"
+        try:
+            root = Path(__file__).resolve().parents[3]/"v4-upgrade"
+        except IndexError:
+            self.skipTest("External real-paper inspections are not part of the portable synthetic corpus")
         if not all((root/(name+"-auto")/"inspection.json").exists() for name in ("han", "monat", "pan")):
             self.skipTest("External real-paper inspections are not part of the portable synthetic corpus")
         for name, count in (("han", 42), ("monat", 8), ("pan", 75)):
