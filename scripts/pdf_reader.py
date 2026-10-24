@@ -30,8 +30,70 @@ def rect(value, bounds):
     if r.is_empty or r.is_infinite or not bounds.contains(r): raise ValueError(f'Invalid rectangle: {value}')
     return r
 
+def _locate_font(f, fontdir):
+    if not f: return None
+    cand = Path(f)
+    if cand.is_file(): return cand.resolve()
+    if fontdir:
+        cand2 = (Path(fontdir) / f)
+        if cand2.is_file(): return cand2.resolve()
+    return None
+
+def _prepare_archive_fonts(m, fonts, fontdir):
+    """Subset .ttc/.otc CJK collections via fontTools (SC subfont + retain_gids) so MuPDF embeds ~1MB instead of 28MB."""
+    paths = [_locate_font(fonts.get("regular"), fontdir), _locate_font(fonts.get("bold"), fontdir), _locate_font(fonts.get("fallback") or fonts.get("symbol"), fontdir)]
+    ttc_paths = [p for p in paths if p and p.suffix.lower() in (".ttc", ".otc")]
+    if not ttc_paths:
+        return fonts, False, None
+    try:
+        from fontTools.ttLib import TTFont
+        from fontTools import subset
+    except Exception:
+        return fonts, False, None
+    m_json = json.dumps(m, ensure_ascii=False)
+    chars = set(chr(i) for i in range(32, 127)) | set(m_json) | set("参考文献（原文书目信息）·原第页")
+    char_str = "".join(sorted(chars))
+    sig = "|".join(f"{tp}:{tp.stat().st_mtime_ns}" for tp in sorted(set(ttc_paths)))
+    key = hashlib.sha256((sig + "|" + char_str).encode("utf-8")).hexdigest()[:16]
+    out_dir = Path(tempfile.gettempdir()) / "pdf-reader-ttc-subset" / key
+    out_dir.mkdir(parents=True, exist_ok=True)
+    updated = dict(fonts)
+    for role in ("regular", "bold", "fallback", "symbol"):
+        src_path = _locate_font(updated.get(role), fontdir)
+        if not src_path:
+            continue
+        out_file = out_dir / src_path.name
+        if src_path.suffix.lower() in (".ttc", ".otc"):
+            if not out_file.is_file():
+                tt = None
+                for num in (2, 0):
+                    try:
+                        cand = TTFont(str(src_path), fontNumber=num)
+                        ps_name = cand["name"].getDebugName(6) or ""
+                        if num == 2 or "SC" in ps_name or tt is None:
+                            tt = cand
+                            if "SC" in ps_name:
+                                break
+                    except Exception:
+                        continue
+                if tt is None:
+                    continue
+                opts = subset.Options(retain_gids=True)
+                s = subset.Subsetter(options=opts)
+                s.populate(text=char_str)
+                s.subset(tt)
+                tt.save(str(out_file))
+        else:
+            if not out_file.exists():
+                try:
+                    out_file.symlink_to(src_path)
+                except Exception:
+                    out_file.write_bytes(src_path.read_bytes())
+        updated[role] = str(out_file)
+    return updated, True, str(out_dir)
+
 def style(m, fontdir):
-    fonts=resolve_fonts(m.get('fonts'),fontdir)
+    fonts, _ttc_sub, _sub_dir = _prepare_archive_fonts(m, resolve_fonts(m.get('fonts'),fontdir), fontdir)
     reg = Path(fonts['regular']).name if Path(fonts['regular']).is_file() else fonts['regular']
     bld = Path(fonts.get('bold', fonts['regular'])).name if Path(fonts.get('bold', fonts['regular'])).is_file() else fonts.get('bold', fonts['regular'])
     css=f"@font-face{{font-family:Body;src:url('{reg}')}}@font-face{{font-family:Body;src:url('{bld}');font-weight:bold}}*{{margin:0;padding:0}}body{{font-family:Body}}sup,sub{{font-size:70%}}a{{color:#0000ff;text-decoration:none}}"
@@ -40,10 +102,13 @@ def style(m, fontdir):
     if fallback:
         fb = Path(fallback).name if Path(fallback).is_file() else fallback
         css+=f"@font-face{{font-family:PdfFallback;src:url('{fb}')}}"
-    dirs = {str(fontdir)} if fontdir else set()
-    for f in (fonts.get('regular'), fonts.get('bold'), fallback):
-        if f and Path(f).is_file(): dirs.add(str(Path(f).parent.resolve()))
-    archive = fitz.Archive(list(dirs)) if len(dirs) > 1 else fitz.Archive(list(dirs)[0] if dirs else '.')
+    if _sub_dir:
+        archive = fitz.Archive(_sub_dir)
+    else:
+        dirs = {str(fontdir)} if fontdir else set()
+        for f in (fonts.get('regular'), fonts.get('bold'), fallback):
+            if f and Path(f).is_file(): dirs.add(str(Path(f).parent.resolve()))
+        archive = fitz.Archive(list(dirs)) if len(dirs) > 1 else fitz.Archive(list(dirs)[0] if dirs else '.')
     return css, archive
 
 def content(item, fonts=None):
@@ -404,7 +469,9 @@ def build(args):
         if 'scope' in m:metadata['subject']=m['scope']
         doc.set_metadata(metadata)
         aligned_author_year_links=align_author_year_links(original,doc,source_pages)
-        doc.subset_fonts();doc.save(target,garbage=4,deflate=True);doc.close()
+        _, _ttc_sub, _ = _prepare_archive_fonts(m, resolve_fonts(m.get('fonts'),fontdir), fontdir)
+        if not _ttc_sub: doc.subset_fonts()
+        doc.save(target,garbage=4,deflate=True);doc.close()
     saved=fitz.open(target)
     timings['save_fonts_links_seconds']=round(time.perf_counter()-phase,3);phase=time.perf_counter()
     for item in checks:
