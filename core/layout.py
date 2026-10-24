@@ -5,7 +5,8 @@ from copy import deepcopy
 import html
 import re
 
-from .classifier import classify, column_groups, intersects, union
+from .classifier import classify, clamp_body_font, column_groups, intersects, union
+from .stacked_selectivity import is_stacked_script_fragment
 from .redaction import split_masks
 from .citations import restore_citations, object_colours, canonical, author_year_colours
 from .paragraphs import prepare_render_text
@@ -230,6 +231,12 @@ def compile_layout(mapping, fonts=None):
                       "paragraph_start": b.get("paragraph_start", True),
                       "inline_fragment": b.get("role") == "inline-fragment",
                       **{k: b[k] for k in ("size", "leading", "min_scale", "source_font_pt", "logical_paragraph_id") if k in b and b[k] is not None}}
+            if "size" in region:
+                region["size"] = clamp_body_font(region["size"], {**b, "html": html, "rect": region["rect"]})
+            if (is_stacked_script_fragment(b.get("source_text", ""))
+                    or is_stacked_script_fragment(b.get("translation", ""))
+                    or is_stacked_script_fragment(html)):
+                region["stacked_script"] = True
             region["parts"] = [{"rank": rank.get(b["id"], len(rank)), "html": html,
                                 "paragraph_start": region["paragraph_start"],
                                 "inline_fragment": region["inline_fragment"]}]
@@ -266,6 +273,14 @@ def compile_layout(mapping, fonts=None):
                     if not same_column and not contained and not (a["column"] == b["column"] == "full" and nested_fragment):
                         issues.append({"check": "cross-column-prose-overlap", "id": a["id"], "other": b["id"], "page": pn})
                         continue
+                    # Selectivity charges and ion scripts stay math. Merging them
+                    # into the sentence copies literal "+" and then min() adopts
+                    # the superscript's font size for the whole paragraph.
+                    if (a.get("stacked_script") or b.get("stacked_script")
+                            or is_stacked_script_fragment(a.get("html", ""))
+                            or is_stacked_script_fragment(b.get("html", ""))
+                            or a.get("block_type") == "formula" or b.get("block_type") == "formula"):
+                        continue
                     first, second = _prose_order(a,b)
                     # Overlapping extraction boxes can invert a fragment and
                     # its parent; the compiled text order must follow the same
@@ -282,7 +297,10 @@ def compile_layout(mapping, fonts=None):
                                                          key=lambda i: rank.get(i, len(rank))),
                               "source_rects": first["source_rects"]+second["source_rects"],
                               "html": html, "parts": parts,
-                              "size": min(a.get("size", 9.35), b.get("size", 9.35)),
+                              "size": clamp_body_font(min(a.get("size", 9.35), b.get("size", 9.35)),
+                                                      {"type": first.get("block_type", "paragraph"),
+                                                       "html": html, "rect": union([a["rect"], b["rect"]]),
+                                                       "inline_fragment": first.get("inline_fragment") and second.get("inline_fragment")}),
                               "leading": min(a.get("leading", 1.17), b.get("leading", 1.17)),
                               "min_scale": max(a.get("min_scale", .88), b.get("min_scale", .88))}
                     if a.get("logical_paragraph_id") and a.get("logical_paragraph_id") == b.get("logical_paragraph_id"):

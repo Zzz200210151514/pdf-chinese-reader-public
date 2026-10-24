@@ -11,6 +11,8 @@ import hashlib
 import re
 
 from .pdf_reader import block_text, records_from_pages, script_markup, stable_id, visible_line_bbox
+from .stacked_selectivity import (
+    apply_pua_digits, is_stacked_script_fragment, same_visible_chars, synthesize_stacked_selectivity)
 
 CAPTION = re.compile(r"^(?P<kind>Fig(?:ure)?\.?|Table)\s*(?P<number>\d+)\s*(?:[.:|]|[–—-])\s+", re.I)
 REF_HEAD = re.compile(r"^(?:references(?: and notes)?|bibliography)\s*[.:]?\s*$", re.I)
@@ -66,6 +68,45 @@ def adapted_body_size(source_pt):
     if source_pt < 7.8:
         return round(source_pt, 1)
     return min(9.5, max(8.5, round(source_pt * 1.05, 1)))
+
+
+# Rendered Chinese body/abstract text cannot shrink below this. The public
+# reading style already uses 9 pt for abstracts and 9.5 pt for body; 9 pt is
+# the floor so adaptive fit cannot crush a paragraph to the ~5 pt superscript
+# size that a merged selectivity charge used to impose. Captions and tiny
+# inline citation chips are outside this floor.
+BODY_FONT_FLOOR = 9.0
+
+
+def body_font_floor_applies(block):
+    """True for a real body/abstract region, not a caption, chip, or script glyph."""
+    kind = block.get('block_type') or block.get('type')
+    if kind not in {'paragraph', 'abstract'}:
+        return False
+    text = block.get('source_text') or block.get('html') or ''
+    if is_stacked_script_fragment(text):
+        return False
+    rect = block.get('rect') or [0, 0, 0, 0]
+    try:
+        # Citation chips and stacked-charge glyphs are smaller than a text line
+        # in a column. The floor is for column body copy, which is wider.
+        tiny = (float(rect[2]) - float(rect[0])) <= 80 and (float(rect[3]) - float(rect[1])) <= 30
+    except (TypeError, ValueError, IndexError):
+        tiny = False
+    if tiny:
+        return False
+    return True
+
+
+def clamp_body_font(size, block):
+    """Raise a body size to ``BODY_FONT_FLOOR`` when the floor applies."""
+    try:
+        size = float(size)
+    except (TypeError, ValueError):
+        size = BODY_FONT_FLOOR
+    if body_font_floor_applies(block):
+        return max(BODY_FONT_FLOOR, size)
+    return size
 
 
 def normalize_heading(text):
@@ -296,9 +337,36 @@ def _line_groups(record, tables, prose, obstacles=(), running=(), bounds=None):
             for k, _, _, ls in groups]
 
 
+def _stacked_formula_entry(record, pn):
+    """One native math block. Stacked markup is kept only when it is the same glyphs."""
+    raw = record.get('text') or ''
+    markup = record.get('stacked_markup') or ''
+    text = markup if markup and same_visible_chars(markup, raw) else raw
+    box = list(record.get('tight_bbox') or record['bbox'])
+    lines = record.get('lines') or []
+    size = dominant(lines) if lines else 9
+    entry = {"id": record['id'], "source_page": pn, "rect": box, "source_text": text,
+             "source_text_sha256": hashlib.sha256(text.encode()).hexdigest(),
+             "type": "formula", "translation_required": False, "translation": "",
+             "preservation_reason": "native-stacked-selectivity",
+             "stacked_markup": text, "size": size, "source_font_pt": size,
+             "leading": 1.17, "min_scale": 1, "original_ids": [record['id']],
+             "original_bbox": list(record['bbox']),
+             "source_lines": [{"text": block_text({"lines": [line]}),
+                               "bbox": visible_line_bbox(line, box),
+                               "original_bbox": list(line.get("bbox", box)),
+                               "spans": deepcopy(line.get("spans", []))} for line in lines]}
+    return entry
+
+
 def classify(inspection):
     """Produce a source_map-compatible suggestion with explicit review issues."""
     pages = inspection["pages"]
+    for page in pages:
+        # Repeat the extract-time pass so a caller that built blocks by hand,
+        # and a page already synthesized in parse(), both end in one math block.
+        apply_pua_digits(page.get("blocks") or [])
+        synthesize_stacked_selectivity(page.get("blocks") or [])
     records, originals, identity_issues = records_from_pages(pages)
     # Recompute from legacy blocks: insert/filter/reorder operations must never
     # make an old records array silently override the actual inspection.
@@ -479,6 +547,9 @@ def classify(inspection):
         entries = []
         for r in source:
             if r["type"] == "figure":
+                continue
+            if r.get("stacked_selectivity"):
+                entries.append(_stacked_formula_entry(r, pn))
                 continue
             split = _line_groups(r, tables, prose, images+vectors+decorative_ink, repeated, bounds)
             for kind, box, text, lines in split:
@@ -689,6 +760,8 @@ def classify(inspection):
         # wrap misread as a displayed equation. Surface it at prepare time so it
         # is resolved with the other review items, not found at visual QA.
         for entry in entries:
+            if entry.get("preservation_reason") == "native-stacked-selectivity":
+                continue
             if (entry["type"] == "formula"
                     and re.search(r"\b[A-Za-z]{3,}\b", entry["source_text"])
                     and not MATH.search(entry["source_text"])

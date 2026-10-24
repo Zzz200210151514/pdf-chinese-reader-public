@@ -12,7 +12,8 @@ import json
 import re
 from pathlib import Path
 
-from .classifier import adapted_body_size, intersects, union
+from .classifier import adapted_body_size, clamp_body_font, intersects, union
+from .stacked_selectivity import is_stacked_script_fragment
 
 
 _TAG = re.compile(r'</?(?:sup|sub|i|b|a)\b[^>]*>', re.I)
@@ -46,6 +47,11 @@ def _is_heading_text(text):
 
 
 def prose_member(block):
+    # A stacked charge or ion script is math, even when extraction left it as
+    # its own paragraph. Linking it into the sentence is what dragged body type
+    # down to the superscript size.
+    if is_stacked_script_fragment(block.get('source_text', '')):
+        return False
     return (block.get('translation_required', True)
             and block.get('type') in {'paragraph', 'abstract', 'caption'}
             and not block.get('bold')
@@ -160,7 +166,10 @@ def _link(members):
     gid = 'lp-' + members[0]['id']
     merged = merge_source(b.get('source_text', '') for b in members)
     sources = [float(b.get('source_font_pt') or b.get('size') or 9) for b in members]
-    size = min(float(b.get('size') or 8) for b in members) if members[0].get('type') == 'caption' else adapted_body_size(min(sources))
+    if members[0].get('type') == 'caption':
+        size = min(float(b.get('size') or 8) for b in members)
+    else:
+        size = clamp_body_font(adapted_body_size(min(sources)), members[0])
     leading = float(members[0].get('leading') or 1.17)
     for index, block in enumerate(members):
         block['logical_paragraph_id'] = gid
@@ -452,7 +461,11 @@ def prepare_render_text(mapping):
             block.pop('render_html', None)
         anchor['logical_translation'] = full
         sources = [float(b.get('source_font_pt') or b.get('size') or 9) for b in members]
-        size = adapted_body_size(min(sources))
+        anchor_kind = anchor.get('type') or anchor.get('block_type')
+        if anchor_kind == 'caption':
+            size = min(float(b.get('size') or 8) for b in members)
+        else:
+            size = clamp_body_font(adapted_body_size(min(sources)), anchor)
         leading = float(anchor.get('leading') or 1.17)
         for block in members:
             block['size'] = size

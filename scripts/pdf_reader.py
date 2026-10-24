@@ -12,6 +12,7 @@ from core.raster import protected_pixmap
 from core.redaction import check_erasure_coverage
 from core import engine_identity
 from core.validator import protected_pixel_level
+from core.classifier import BODY_FONT_FLOOR, body_font_floor_applies, clamp_body_font
 from pdf_colors import capture_separation_tints, restore_separation_tints
 from pdf_layout import validate_layout
 from pdf_fonts import FontCoverage, scientific_symbols
@@ -132,6 +133,22 @@ def fit_only(item, bounds, fonts, css, archive, scale_low=None):
     return max((fit.rect.y1-fitz.Rect(fit.filled).y1)*scale,0),scale
 
 
+def _floor_scale(item):
+    """Largest scale_low that still keeps body type at or above 9 pt."""
+    size = float(item.get('size') or BODY_FONT_FLOOR)
+    if size <= 0:
+        return 1.0
+    return min(1.0, BODY_FONT_FLOOR / size)
+
+
+def _raise_scale_to_floor(item):
+    if not body_font_floor_applies(item):
+        return
+    needed = _floor_scale(item)
+    if float(item.get('min_scale') or 1) + 1e-9 < needed:
+        item['min_scale'] = needed
+
+
 def micro_region(item):
     """Only small standalone inline objects may use the micro fitting floor."""
     if item.get('block_type') in ('title','heading','abstract') or len(item.get('source_block_ids',[]))>1:
@@ -170,6 +187,9 @@ def check_layout(source,m,fontdir):
                     issues.append({'page':n,'id':ident,'check':'missing-glyph','characters':missing,
                                    'action':'Provide a covering fonts.fallback or explicit sub/sup markup; do not emit tofu glyphs.'})
                     continue
+                if body_font_floor_applies(item):
+                    item['size']=clamp_body_font(item.get('size',9.35), item)
+                    _raise_scale_to_floor(item)
                 spare,scale=fit_only(item,bounds,fonts,css,archive)
                 body_paragraph=item.get('block_type') in ('paragraph','abstract','caption')
                 if spare<0:
@@ -193,6 +213,8 @@ def check_layout(source,m,fontdir):
                     source_pt=item.get('source_font_pt')
                     if source_pt:
                         adapted=min(9.5,max(8.5,round(float(source_pt)*1.05,1)))
+                        if body_font_floor_applies(item):
+                            adapted=max(BODY_FONT_FLOOR, adapted)
                         current=float(item.get('size',9.35))
                         if adapted+0.05<current:
                             item['size']=adapted
@@ -203,12 +225,18 @@ def check_layout(source,m,fontdir):
                             else:item['size']=current
                     if spare<0 and float(item.get('min_scale',1))>0.85:
                         original_min=float(item.get('min_scale',1))
-                        item['min_scale']=0.85
-                        spare,scale=fit_only(item,bounds,fonts,css,archive)
-                        if spare>=0:
-                            item.setdefault('fit_adjustment',{}).update(
-                                kind='adaptive-fit',min_scale_before=original_min,min_scale_after=0.85)
-                        else:item['min_scale']=original_min
+                        lowered=0.85
+                        if body_font_floor_applies(item):
+                            lowered=max(0.85, _floor_scale(item))
+                        if lowered+1e-9<original_min:
+                            item['min_scale']=lowered
+                            spare,scale=fit_only(item,bounds,fonts,css,archive)
+                            if spare>=0:
+                                item.setdefault('fit_adjustment',{}).update(
+                                    kind='adaptive-fit',min_scale_before=original_min,min_scale_after=lowered)
+                            else:item['min_scale']=original_min
+                    if body_font_floor_applies(item):
+                        _raise_scale_to_floor(item)
                 if spare<0 and micro_region(item) and float(item.get('min_scale',1))>.75:
                     original_min=float(item.get('min_scale',1))
                     item['min_scale']=.75
@@ -269,6 +297,11 @@ def _unify_paragraph_typography(manifest, fonts, css, archive, fits, warnings, i
         before=[(round(float(m.get('size',9.35)),2), round(float(m.get('leading',1.17)),3)) for m in members]
         rendered=[float(m.get('size',9.35))*float(m.get('_fit_scale',1) or 1) for m in members]
         target=min(rendered)
+        # A merged paragraph inherits one size. Body copy stops at 9 pt even
+        # when one box was fitted from a smaller source size.
+        body_floor=all(body_font_floor_applies(m) for m in members)
+        if body_floor:
+            target=max(BODY_FONT_FLOOR, target)
         leading=min(float(m.get('leading',1.17)) for m in members)
         for m in members:
             m['size']=round(target,2)
@@ -284,15 +317,26 @@ def _unify_paragraph_typography(manifest, fonts, css, archive, fits, warnings, i
         if any(spare<0 for _,spare,_ in refits):
             scales=[fit_only(m,None,fonts,css,archive,scale_low=0)[1] for m,spare,_ in refits if spare<0]
             worst=min((s if s>0 else 0.85) for s in scales) if scales else 0.85
-            target=round(target*max(worst*0.99,0.85),2)
-            for m in members:
-                m['size']=target
-                m['min_scale']=1.0
-            refits=refit_all()
-            if any(spare<0 for _,spare,_ in refits):
+            shrunk=round(target*max(worst*0.99,0.85),2)
+            if body_floor:
+                shrunk=max(BODY_FONT_FLOOR, shrunk)
+            if shrunk+0.01<target:
+                target=shrunk
                 for m in members:
-                    m['min_scale']=0.85
+                    m['size']=target
+                    m['min_scale']=1.0
                 refits=refit_all()
+            if any(spare<0 for _,spare,_ in refits):
+                if body_floor:
+                    allowed=min(1.0, BODY_FONT_FLOOR/target if target else 1.0)
+                    if allowed+1e-6<1:
+                        for m in members:
+                            m['min_scale']=allowed
+                        refits=refit_all()
+                else:
+                    for m in members:
+                        m['min_scale']=0.85
+                    refits=refit_all()
         for m,spare,scale in refits:
             page=m.pop('_page',None)
             m.pop('_fit_scale',None)
