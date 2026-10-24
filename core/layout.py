@@ -223,7 +223,8 @@ def compile_layout(mapping, fonts=None):
             html = "<b>"+markup+"</b>" if b.get("bold") else markup
             absorbed_ids = list(b.get("absorbs") or [])
             source_ids = sorted({b["id"], *absorbed_ids}, key=lambda i: rank.get(i, len(rank)))
-            region = {"id": b["id"], "source_block_ids": source_ids, "rect": list(box),
+            effective_box = union([box, *(b.get("absorb_rects") or [])]) if b.get("absorb_rects") else list(box)
+            region = {"id": b["id"], "source_block_ids": source_ids, "rect": list(effective_box),
                       "block_type": b.get("type", "paragraph"),
                       "source_rects": [list(box), *[list(r) for r in b.get("absorb_rects") or []]], "html": html,
                       "paragraph_start": b.get("paragraph_start", True),

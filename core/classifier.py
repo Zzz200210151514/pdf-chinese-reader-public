@@ -15,7 +15,7 @@ from .pdf_reader import block_text, records_from_pages, script_markup, stable_id
 CAPTION = re.compile(r"^(?P<kind>Fig(?:ure)?\.?|Table)\s*(?P<number>\d+)\s*(?:[.:|]|[–—-])\s+", re.I)
 REF_HEAD = re.compile(r"^(?:references(?: and notes)?|bibliography)\s*[.:]?\s*$", re.I)
 REF_START = re.compile(r"^\s*(?:\[(\d{1,3})\]|\((\d{1,3})\)|(\d{1,3})\.)\s+")
-POST_REF = re.compile(r"^(?:acknowledg\w*|author contributions|author information|funding|competing interests|conflicts? of interest|declaration\w*|supporting information|supplementary information|data availability|code availability|additional information|associated content|notes)\b", re.I)
+POST_REF = re.compile(r"^(?:acknowledg\w*|author contributions|authors?[\x27\u2019]?\s*(?:declared\s+)?contributions?|author information|information about (?:the )?authors?|funding|competing interests|conflicts? of interest|declaration\w*|supporting information|supplementary information|data availability|code availability|additional information|associated content|notes)\b", re.I)
 MATH = re.compile(r"[=≈≠≤≥∑∫√×±−→⇌⇋↔⇄⟶\x80-\x9f]")
 META = re.compile(r"\b(?:university|institute|department|laboratory|college|correspondence|e-?mail|orcid|received|accepted|published online)\b|@", re.I)
 UNIT = re.compile(r"^(?:[-+−]?\d[\d.,]*\s*)?(?:[μµmnpk]?m|[μµmnpk]?g|s|K|°C|eV|keV|mol|mmol|M|mM|Hz|kHz|MPa|Pa|%)(?:[−-]?\d+|[²³])?(?:\s*[/·]\s*\w+(?:[−-]?\d+|[²³])?)*$")
@@ -193,7 +193,7 @@ def reading_order(items, bounds):
 
 
 def _formula(text):
-    words = re.findall(r"[A-Za-z]{3,}", text)
+    words = re.findall(r"[A-Za-zА-Яа-яЁё]{3,}", text)
     visible = sum(not c.isspace() for c in text)
     # Scientific headings and connecting prose remain translatable even if an
     # inline equation leaves few long words in this one extracted line.
@@ -205,11 +205,11 @@ def _formula(text):
     if len(words)>=3 and text.upper()==text and not MATH.search(text):return False
     # Greek letters name sections and concepts too. A Greek glyph alone is not
     # evidence of a displayed equation; require mathematical operators/structure.
-    reaction = bool(re.search(r"[→⇌↔⇄⟶]", text) and not re.search(r"\b[a-z]{4,}\b", text))
+    reaction = bool(re.search(r"[→⇌↔⇄⟶]", text) and not re.search(r"\b[a-zа-яё]{4,}\b", text))
     return bool(text and (reaction or (MATH.search(text) and len(words) < 3)
                          or re.fullmatch(r"\(\d{1,3}\)", text)
                          or (visible and any(c.isdigit() for c in text)
-                             and not re.search(r"[A-Za-z]{3}|[α-ωΑ-Ω]", text) and not UNIT.fullmatch(text))))
+                             and not re.search(r"[A-Za-zА-Яа-яЁё]{3}|[α-ωΑ-Ω]", text) and not UNIT.fullmatch(text))))
 
 
 def _near(box, objects, size):
@@ -224,17 +224,23 @@ def _near(box, objects, size):
     return False
 
 
-def _line_groups(record, tables, prose, obstacles=(), running=()):
+def _line_groups(record, tables, prose, obstacles=(), running=(), bounds=None):
     """Split only at native table/formula boundaries, preserving inline fragments."""
     lines = record.get("lines", [])
     if not lines:
         return [("paragraph", record["bbox"], record["text"], [])]
+    sibling_prose = [visible_line_bbox(l2, record["bbox"]) for l2 in lines
+                     if len(re.findall(r"[A-Za-zА-Яа-яЁё]{4,}", block_text({"lines": [l2]}))) >= 2]
     kinds = []
     for line in lines:
         text = block_text({"lines": [line]})
         heading = normalize_heading(text)
-        if re.sub(r'\d+', '#', text).strip().lower() in running:
-            kinds.append('footer')
+        box = visible_line_bbox(line, record["bbox"])
+        h = (bounds[3] - bounds[1]) if bounds else 0
+        line_boundary = bool(bounds and (box[3] < bounds[1] + h * .105 or box[1] > bounds[3] - h * .08))
+        rkey = re.sub(r'\d+', '#', text).strip().lower()
+        if ( line_boundary or bounds is None ) and rkey in running and rkey != '#':
+            kinds.append('header' if (bounds and box[3] < bounds[1] + h * .105) else 'footer')
             continue
         if REF_HEAD.fullmatch(heading):
             kinds.append("reference-heading")
@@ -245,14 +251,13 @@ def _line_groups(record, tables, prose, obstacles=(), running=()):
         if len(text) < 100 and POST_REF.match(heading):
             kinds.append("post-reference-heading")
             continue
-        box = visible_line_bbox(line, record["bbox"])
         # Table cells sometimes have multiple spans, sometimes separate lines at
         # the same baseline. Geometry detection is stronger evidence than digits.
         in_table = any(contains(t, box, 2) for t in tables)
         spans = line.get("spans", [])
         spaced_cells = sum(spans[i+1]["bbox"][0]-spans[i]["bbox"][2] > max(12, dominant([line])*1.5)
                            for i in range(len(spans)-1) if "bbox" in spans[i] and "bbox" in spans[i+1]) >= 1
-        numeric_row = len(re.findall(r"(?<!\w)[-+]?\d+(?:\.\d+)?", text)) >= 3 and len(re.findall(r"[A-Za-z]{4,}", text)) <= 2
+        numeric_row = len(re.findall(r"(?<!\w)[-+]?\d+(?:\.\d+)?", text)) >= 3 and len(re.findall(r"[A-Za-zА-Яа-яЁё]{4,}", text)) <= 2
         inline = any(intersects(box, p) for p in prose if p != record.get("tight_bbox", record["bbox"]))
         # PDF justification often emits "of", "is", or a numeric/unit phrase as
         # separate blocks on the same prose baseline. Adjacency still means an
@@ -260,6 +265,10 @@ def _line_groups(record, tables, prose, obstacles=(), running=()):
         inline = inline or any(abs((box[1]+box[3])-(p[1]+p[3])) <= dominant([line])*1.3
                                and max(p[0]-box[2], box[0]-p[2], 0) <= dominant([line])*5
                                for p in prose if p != record.get("tight_bbox", record["bbox"]))
+        inline = inline or any(sbox != box and (intersects(box, sbox) or (
+                               abs((box[1]+box[3])-(sbox[1]+sbox[3])) <= dominant([line])*1.3
+                               and max(sbox[0]-box[2], box[0]-sbox[2], 0) <= dominant([line])*5))
+                               for sbox in sibling_prose)
         kinds.append("table" if in_table or spaced_cells and numeric_row else
                      "formula" if _formula(text) and not inline else "paragraph")
     # A bare equation number adjacent to prose is ambiguous; do not create a
@@ -304,12 +313,12 @@ def classify(inspection):
         h = page["rect"][3]-page["rect"][1]
         page_running = {re.sub(r"\d+", "#", r["text"]).strip().lower()
                         for r in records if r["page"] == page["source_page"] and r["text"]
-                        and (r["bbox"][3] < page["rect"][1]+h*.08 or r["bbox"][1] > page["rect"][3]-h*.08)}
+                        and (r["bbox"][3] < page["rect"][1]+h*.105 or r["bbox"][1] > page["rect"][3]-h*.08)}
         page_running.update({re.sub(r'\d+', '#', block_text({'lines':[l]})).strip().lower()
                         for r in records if r['page']==page['source_page'] for l in r.get('lines',[])
-                        if l['bbox'][3] < page['rect'][1]+h*.08 or l['bbox'][1] > page['rect'][3]-h*.08})
+                        if l['bbox'][3] < page['rect'][1]+h*.105 or l['bbox'][1] > page['rect'][3]-h*.08})
         running.update(page_running)
-    repeated = {k for k, n in running.items() if n >= 2 and n >= len(pages)*.5}
+    repeated = {k for k, n in running.items() if k != "#" and n >= 2 and n >= len(pages)*.5}
     in_refs = False
     seen_ref_head = False
     refs_by_number = {}
@@ -318,6 +327,7 @@ def classify(inspection):
     for page in pages:
         pn, bounds = page["source_page"], page["rect"]
         source = sorted((r for r in records if r["page"] == pn), key=lambda r: (r["bbox"][1], r["bbox"][0], r["id"]))
+        page_body = dominant([line for r in source for line in r.get("lines", [])])
         # Require a numbered display AND specialized math glyphs AND an
         # operator nearby. Italic fonts alone never turn prose into a formula.
         equation_zones = []
@@ -470,7 +480,7 @@ def classify(inspection):
         for r in source:
             if r["type"] == "figure":
                 continue
-            split = _line_groups(r, tables, prose, images+vectors+decorative_ink, repeated)
+            split = _line_groups(r, tables, prose, images+vectors+decorative_ink, repeated, bounds)
             for kind, box, text, lines in split:
                 if not text:
                     continue
@@ -521,9 +531,12 @@ def classify(inspection):
                     entry["bold"] = True
                 h = bounds[3]-bounds[1]
                 key = re.sub(r"\d+", "#", text).strip().lower()
-                boundary = box[3] < bounds[1]+h*.08 or box[1] > bounds[3]-h*.08
-                if boundary and (key in repeated or re.fullmatch(r"\d+", text)):
-                    kind = "header" if box[3] < bounds[1]+h*.08 else "footer"
+                top_header = box[3] < bounds[1]+h*.105
+                bot_footer = box[1] > bounds[3]-h*.08
+                boundary = top_header or bot_footer
+                page_num_boundary = box[3] < bounds[1]+h*.08 or bot_footer
+                if (boundary and key in repeated) or (page_num_boundary and re.fullmatch(r"\d+", text)):
+                    kind = "header" if top_header else "footer"
                 caption = CAPTION.match(text)
                 if not caption and lines:
                     # A standalone numbered label on its own line is established
@@ -532,8 +545,9 @@ def classify(inspection):
                     caption = re.fullmatch(r"(?P<kind>Fig(?:ure)?\.?|Table)\s*(?P<number>\d+)[.:]?", label, re.I)
                 if caption and kind == "paragraph":
                     objects = tables if caption["kind"].lower() == "table" else images+vectors
+                    lead_bold = bool(spans and (spans[0].get("flags", 0)&16 or "bold" in spans[0].get("font", "").lower()))
                     # Caption grammar AND proximity AND typographic separation.
-                    formatted = bool(caption) and (size <= body*1.05 or entry.get("bold"))
+                    formatted = bool(caption) and (size <= max(body, page_body)*1.05 or entry.get("bold") or lead_bold)
                     if formatted and _near(box, objects, size):
                         kind = "caption"
                         target = ("table" if caption["kind"].lower() == "table" else "fig")+"/"+caption["number"]
@@ -568,7 +582,7 @@ def classify(inspection):
                 # figure: several ordinary lowercase words plus clause
                 # punctuation are prose evidence no axis label produces.
                 prose_like = len(re.findall(r"[a-z]{4,}", text)) >= 2 and bool(re.search(r"[,;]", text))
-                if (kind in {"paragraph", "formula"} and not prose_like and any(contains(z, box) for z in label_zones)
+                if (kind in {"paragraph", "formula"} and not caption and not prose_like and any(contains(z, box) for z in label_zones)
                         and (len(text) <= 100 or not re.search(r"[a-z]{3,}", text))
                         and not narrative_mention and not prose_sentence and not inline_parents):
                     kind = "figure"
@@ -655,8 +669,16 @@ def classify(inspection):
                 # Running headers must not be reclassified as graph labels by a
                 # nearby full-page figure. Preserve their boundary provenance.
                 if boundary and key in repeated:
-                    kind='header' if box[3] < bounds[1]+h*.08 else 'footer'
+                    kind='header' if top_header else 'footer'
                     reason='native-'+kind
+                if kind in {"paragraph", "abstract", "caption"} and box[3] - box[1] >= body * 2:
+                    for img in images:
+                        if (min(box[2], img[2]) > max(box[0], img[0])
+                                and box[1] < img[1] - body and 0 < box[3] - img[1] <= 2.5
+                                and all(s.get("origin", [0, box[1]])[1] <= img[1]
+                                        for l in lines for s in l.get("spans", []) if s.get("text", "").strip())):
+                            box = [box[0], box[1], box[2], round(img[1] - 0.05, 3)]
+                            entry["rect"] = list(box)
                 entry["type"] = kind
                 if reason:
                     entry.update(translation_required=False, preservation_reason=reason)

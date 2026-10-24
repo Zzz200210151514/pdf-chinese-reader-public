@@ -49,6 +49,17 @@ def resolve_fonts(fonts=None, font_dir=None):
 
     if font_dir is not None:
         directory = Path(font_dir)
+        if not fonts and not _resolve_single_path(result.get('regular'), directory):
+            from .doctor import FONT_CANDIDATES
+            for candidates in FONT_CANDIDATES.values():
+                reg = next((n for n in candidates.get('regular', []) if (directory / n).is_file()), None)
+                if reg:
+                    result['regular'] = reg
+                    bold = next((n for n in candidates.get('bold', []) if (directory / n).is_file()), reg)
+                    result['bold'] = bold
+                    fb = next((n for n in candidates.get('fallback', []) if (directory / n).is_file()), None)
+                    result['fallback'] = fb
+                    break
         if not _resolve_single_path(result.get('regular'), directory):
             raise ValueError(f"Missing font (regular): {directory / str(result.get('regular'))}")
         if not _resolve_single_path(result.get('bold'), directory):

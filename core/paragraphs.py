@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from .classifier import adapted_body_size, intersects
+from .classifier import adapted_body_size, intersects, union
 
 
 _TAG = re.compile(r'</?(?:sup|sub|i|b|a)\b[^>]*>', re.I)
@@ -94,13 +94,19 @@ def continues(prev, nxt, page_bounds):
     ns = float(nxt.get('source_font_pt') or nxt.get('size') or 9)
     if abs(ps - ns) > 1.5:
         return False
+    bounds = page_bounds.get(prev['source_page'])
     if prev['source_page'] == nxt['source_page'] and intersects(prev['rect'], nxt['rect']):
         if prev.get('type') == 'caption' and nxt.get('type') == 'caption' and abs(prev['rect'][0] - nxt['rect'][0]) <= 4:
             return True
-        # Overlapping fragments share one typeset region; linking is decided by
-        # the caller only when they are inline pieces of the same sentence.
-        return nxt.get('role') == 'inline-fragment' or prev.get('role') == 'inline-fragment'
-    bounds = page_bounds.get(prev['source_page'])
+        if nxt.get('role') == 'inline-fragment' or prev.get('role') == 'inline-fragment':
+            return True
+        if bounds:
+            pc, nc = _column(prev['rect'], bounds), _column(nxt['rect'], bounds)
+            if (pc == nc and prev['rect'][1] <= nxt['rect'][1]
+                    and prev['rect'][3] - nxt['rect'][1] <= max(ps, ns) * 2.2
+                    and abs(prev['rect'][0] - nxt['rect'][0]) <= ps * 4):
+                return True
+        return False
     if not bounds:
         return False
     if prev['source_page'] == nxt['source_page']:
@@ -114,7 +120,7 @@ def continues(prev, nxt, page_bounds):
                 and -12 <= gap_y <= max(ps * 0.85, 8) and abs(prev['rect'][0] - nxt['rect'][0]) <= ps * 4):
             return True
         height = bounds[3] - bounds[1]
-        if pc == 'left' and nc == 'right' and prev['rect'][3] > bounds[1] + height * 0.65 and nxt['rect'][1] < bounds[1] + height * 0.72:
+        if pc == 'left' and nc == 'right' and prev['rect'][3] > bounds[1] + height * 0.55 and (nxt['rect'][1] < bounds[1] + height * 0.72 or abs(nxt['rect'][1] - prev['rect'][1]) <= ps * 2):
             return True
         return False
     if nxt['source_page'] != prev['source_page'] + 1:
@@ -125,7 +131,7 @@ def continues(prev, nxt, page_bounds):
     height = bounds[3] - bounds[1]
     nxt_height = nxt_bounds[3] - nxt_bounds[1]
     pc, nc = _column(prev['rect'], bounds), _column(nxt['rect'], nxt_bounds)
-    low = prev['rect'][3] > bounds[1] + height * 0.65
+    low = prev['rect'][3] > bounds[1] + height * 0.55
     high = nxt['rect'][1] < nxt_bounds[1] + nxt_height * 0.88
     return bool(low and high and (pc == nc or {pc, nc} <= {'left', 'right', 'full'}))
 
@@ -461,7 +467,7 @@ def prepare_render_text(mapping):
             host.setdefault('absorbs', []).append(block['id'])
             host.setdefault('absorb_rects', []).append(list(block['rect']))
             block['absorbed'] = True
-        parts = split_flow(full, [_area(keeper['rect']) for keeper in keepers]) if full.strip() else None
+        parts = split_flow(full, [_area(union([keeper['rect'], *(keeper.get('absorb_rects') or [])])) for keeper in keepers]) if full.strip() else None
         if parts is None:
             if keepers:
                 keepers[0]['render_html'] = full

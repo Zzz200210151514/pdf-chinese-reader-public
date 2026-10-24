@@ -22,7 +22,9 @@ class Plain(HTMLParser):
     def handle_data(self, text): self.parts.append(text)
     def text(self): return ''.join(self.parts)
 
-def cjk(text): return ''.join(re.findall(r'[\u3400-\u9fff]', text))
+def cjk(text):
+    import unicodedata
+    return ''.join(re.findall(r'[\u3400-\u9fff]', unicodedata.normalize('NFKC', text)))
 def rect(value, bounds):
     r=fitz.Rect(value)
     if r.is_empty or r.is_infinite or not bounds.contains(r): raise ValueError(f'Invalid rectangle: {value}')
@@ -369,7 +371,7 @@ def build(args):
     target.parent.mkdir(parents=True,exist_ok=True)
     aligned_author_year_links=0
     with tempfile.TemporaryDirectory(prefix='pdf-reader-') as temp:
-        temp_pdf=Path(temp)/'annotations.pdf';doc.subset_fonts();doc.save(temp_pdf,garbage=4,deflate=True);doc.close();doc=fitz.open(temp_pdf)
+        temp_pdf=Path(temp)/'annotations.pdf';doc.save(temp_pdf);doc.close();doc=fitz.open(temp_pdf)
         links=[];first={}
         for p in doc:
             for link in p.get_links():
@@ -425,8 +427,21 @@ def build(args):
             # Quality tier: identical text in a native text object, or a small
             # rendering delta on a protected graphic, is anti-aliasing or
             # compression rather than content loss. Visible changes still fail.
-            src_text=normalize(original[item['source_page']].get_text(clip=r))
-            out_text=normalize(saved[item['output_page']].get_text(clip=r))
+            if item.get('type') in ('figure', 'image', 'drawing'):
+                def _gtext(pg, rect):
+                    return normalize(''.join(
+                        c.get('c', '')
+                        for blk in pg.get_text('rawdict', clip=rect).get('blocks', []) if blk.get('type') == 0
+                        for ln in blk.get('lines', [])
+                        for sp in ln.get('spans', [])
+                        for c in sp.get('chars', [])
+                        if rect.contains(fitz.Point(*(c.get('origin') or sp.get('origin') or (rect.x0, rect.y0))))
+                    ))
+                src_text=_gtext(original[item['source_page']], r)
+                out_text=_gtext(saved[item['output_page']], r)
+            else:
+                src_text=normalize(original[item['source_page']].get_text(clip=r))
+                out_text=normalize(saved[item['output_page']].get_text(clip=r))
             diff=round(sum(1 for u,v in zip(a.samples,b.samples) if u!=v)/max(1,len(a.samples))*100,2)
             level=protected_pixel_level(item.get('type'),src_text,out_text,diff)
             item['pixel_diff_percent']=diff

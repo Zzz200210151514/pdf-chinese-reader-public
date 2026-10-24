@@ -280,5 +280,43 @@ class MicroNativeFixes(unittest.TestCase):
         self.assertFalse(native_micro_fragment('Fig. 2', [0, 0, 40, 10]))
 
 
+
+    def test_internal_subscript_digit_not_misclassified_as_running_footer(self):
+        from test_parser_layout import line
+        # Brizhan 2026 (Condensed Matter and Interphases): page numbers 444..448
+        # at the bottom margin must not cause an internal subscript '4' line in
+        # n(NH4+) in the middle of page 4 to be split out as a protected footer.
+        page1 = {"source_page": 1, "rect": [0, 0, 600, 800], "blocks": [
+            block("444", [50, 775, 70, 788]),
+            block("Body paragraph on page one with enough words.", [50, 100, 280, 140]),
+        ], "drawing_clusters": [], "tables": []}
+        page2 = {"source_page": 2, "rect": [0, 0, 600, 800], "blocks": [
+            block("445", [50, 775, 70, 788]),
+            block("", [50, 240, 280, 320], lines=[
+                line("Fig. 2 shows the amount of ammonia nitrogen (nNH )", [50, 250, 280, 265]),
+                line("4", [120, 255, 123, 262], size=5.2),
+                line("+ ) extracted from the feed solution in the BMED.", [120, 250, 280, 265]),
+            ]),
+        ], "drawing_clusters": [], "tables": []}
+        out = classify({"sha256": "b" * 64, "page_count": 2, "pages": [page1, page2], "issues": []})
+        p2_blocks = [b for b in out["blocks"] if b["source_page"] == 2 and b["translation_required"]]
+        self.assertEqual(len(p2_blocks), 1)
+        self.assertIn("4", p2_blocks[0]["source_text"])
+
+    def test_post_reference_information_about_authors_closes_bibliography(self):
+        data = inspection([
+            block("References", [40, 400, 280, 415]),
+            block("1. Edwards T. M. Ammonia and aquatic ecosystems. 2023;167911.", [40, 425, 280, 455]),
+            block("Information about the authors", [40, 470, 220, 485]),
+            block("Kseniia V. Brizhan, Postgraduate student, Kuban State University.", [40, 495, 280, 525]),
+        ])
+        out = classify(data)
+        info = next(b for b in out["blocks"] if "Information about the authors" in b["source_text"])
+        bio = next(b for b in out["blocks"] if "Kseniia" in b["source_text"])
+        self.assertTrue(info["translation_required"])
+        self.assertTrue(bio["translation_required"])
+        self.assertNotIn("Kseniia", out["references"][0]["text"])
+
+
 if __name__ == '__main__':
     unittest.main()

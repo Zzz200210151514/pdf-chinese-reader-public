@@ -19,9 +19,11 @@ def protected_pixel_level(kind,src_text,out_text,diff_percent):
     if kind in GRAPHIC_TYPES or not src_text:
         return 'warning' if diff_percent<=PIXEL_TOLERANCE_PERCENT else 'blocking'
     return 'warning'
+_PUA_DIGITS = str.maketrans({0xf6b1 + i: str(i) for i in range(10)})
 def normalize(text):
     import unicodedata
-    return re.sub(r'[\s\x80-\x9f\ue000-\uf8ff\U000f0000-\U0010ffff]+','',unicodedata.normalize('NFKC',html.unescape(re.sub(r'<[^>]*>','',text)))).replace('−','-').replace('∙','·')
+    text = html.unescape(re.sub(r'<[^>]*>', '', text)).translate(_PUA_DIGITS)
+    return re.sub(r'[\s\x80-\x9f\ue000-\uf8ff\U000f0000-\U0010ffff]+','',unicodedata.normalize('NFKC',text)).replace('−','-').replace('\u2010','-').replace('\u2011','-').replace('∙','·')
 
 def _text_covers(expected, actual):
     """True when every expected character is present, allowing neighbor bleed.
@@ -81,8 +83,21 @@ def validate(source,output,manifest,mapping=None):
                     # Validation levels: identical extracted text inside a
                     # native text object, or a small rendering delta on a
                     # graphic, is anti-aliasing/compression, not content loss.
-                    src_text=normalize(a[p['source_page']-1].get_text(clip=r))
-                    out_text=normalize(b[i].get_text(clip=r))
+                    if item.get('type') in GRAPHIC_TYPES:
+                        def _graphic_text(pg, rect):
+                            return normalize(''.join(
+                                c.get('c', '')
+                                for blk in pg.get_text('rawdict', clip=rect).get('blocks', []) if blk.get('type') == 0
+                                for ln in blk.get('lines', [])
+                                for sp in ln.get('spans', [])
+                                for c in sp.get('chars', [])
+                                if rect.contains(fitz.Point(*(c.get('origin') or sp.get('origin') or (rect.x0, rect.y0))))
+                            ))
+                        src_text=_graphic_text(a[p['source_page']-1], r)
+                        out_text=_graphic_text(b[i], r)
+                    else:
+                        src_text=normalize(a[p['source_page']-1].get_text(clip=r))
+                        out_text=normalize(b[i].get_text(clip=r))
                     diff=round(sum(1 for u,v in zip(src_pix.samples,out_pix.samples) if u!=v)/max(1,len(src_pix.samples))*100,2)
                     level=protected_pixel_level(item.get('type'),src_text,out_text,diff)
                     entry['pixel_diff_percent']=diff
