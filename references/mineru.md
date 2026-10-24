@@ -1,8 +1,8 @@
 # MinerU 提取与缓存
 
-仅在开头询问并得到用户选择后使用本分支；不选择时跳过本文件、CLI 检查与安装。用户指定使用 MinerU 时实际调用，不把本地 PyMuPDF 抽取说成 MinerU。CLI 可单独安装，不需要安装整套 MinerU 技能。先检查 `mineru-open-api version` 和 `extract --help`；模式、限制以实际版本与服务返回为准。
+`prepare` 默认 `--extractor auto`。已配置凭据时才调用 MinerU，并与本地字形合成同一份 `source_map.json`；未配置或调用失败则警告后改用本地提取。不把本地 PyMuPDF 抽取说成 MinerU。CLI 可单独安装，不需要安装整套 MinerU 技能。先检查 `mineru-open-api version` 和 `extract --help`；模式、限制以实际版本与服务返回为准。
 
-按目的选择模式：用户要求先试工具、小文档文本提取且未配置 token 时，可先用 flash；需要完整图片、表格或公式资产时采用 precision，并核查凭据。不要把 flash 的文本调用成功等同于资产完整。精确模式可通过环境变量 `MINERU_TOKEN` 临时提供凭据（跨平台通用），Windows 上也可用 `python scripts/save_mineru_credential.py` 保存到当前 Windows 用户的凭据管理器（Linux/macOS 没有该助手，请一律用 `MINERU_TOKEN`）。技能脚本会自动读取该凭据，并仅在调用子进程期间设置环境变量。也可用 `mineru-open-api auth` 配置 CLI 凭据。不要把凭据放入技能文件、项目环境文件、Git 或聊天记录；凭据不是翻译模型 Token 用量。
+按目的选择模式：用户要求先试工具、小文档文本提取且未配置 token 时，可先用 flash；需要完整图片、表格或公式资产时采用 precision，并核查凭据。不要把 flash 的文本调用成功等同于资产完整。精确模式可通过环境变量 `MINERU_API_KEY` 或 `MINERU_TOKEN` 临时提供凭据（跨平台通用），也可把凭据放在 `MINERU_TOKEN_FILE` 或 `~/.config/pdf-chinese-reader/mineru-token`。Windows 上还可用 `python scripts/save_mineru_credential.py` 保存到当前 Windows 用户的凭据管理器。技能脚本会自动读取该凭据，并仅在调用子进程期间设置环境变量。也可用 `mineru-open-api auth` 配置 CLI 凭据。不要把凭据放入技能文件、项目环境文件、Git 或聊天记录；凭据不是翻译模型 Token 用量。
 
 ```powershell
 python -X utf8 scripts/mineru_extract.py --source paper.pdf --output work/extraction --mode precision

@@ -62,20 +62,13 @@ MD/HTML 生成入口及清单规范见 `references/web-markdown.md`；字体与�
 
 ---
 
-## MinerU 法：双栏中文重排
+## MinerU 与本地提取
 
-原位法仍为默认。说“用 MINERU法”时，用独立的 `reflow_reader.py` 提取结构并重排中文，复用原图、公式和译文缓存。默认微软雅黑、正文9.5pt、摘要9pt、图表题8.2pt；保留双栏节奏，允许自然换页。参考原稿保留刊名、出版标识、首页分区和页眉，位置大致接近即可；期刊样式需按实际原稿配置，不是任意期刊自动复刻。
+只有一条流水线：`translator_v4.py` 的 prepare → plan → translate → finish，在原页上替换译文。`prepare` 默认 `--extractor auto`。配置了 `MINERU_API_KEY`、`MINERU_TOKEN` 或凭据文件时，MinerU 提供块类型、段落分组和阅读顺序，PyMuPDF 字形提供擦除框和字号；没有凭据或提取失败时记一条警告并改用本地提取。扫描页没有文字层时，用 MinerU OCR 文本和 bbox 写入 `source_map.json`。不要再使用 HTML/Chromium 重排。
 
 正文文献、图表及公式引用使用清晰蓝色；文献前的 `[N]` 编号本身可返回正文。PDF返回首次引用，离线HTML可返回最近阅读位置；子图按核实的坐标跳转，落点以最终PDF实际内容为准。
 
-双栏排版另需本地浏览器依赖：
-
-```text
-python -m pip install playwright
-python -m playwright install chromium
-```
-
-MinerU上传须已有授权；复用成功的结构化JSON时不用重新上传。完整流程、完整段落翻译、期刊布局要求及验收见 [MinerU 法](references/mineru-method.md)。它与 `translator_v4.py --extractor mineru` 的原位模式分别使用。
+MinerU上传须已有授权；复用成功的结构化JSON时不用重新上传。凭据与缓存见 [mineru.md](references/mineru.md)，合成规则见 [MinerU 提取](references/mineru-method.md)。
 
 ## 本地脚本依赖
 
@@ -83,7 +76,7 @@ Python 3.10+。
 - 基础依赖：PyMuPDF（PDF 提取与排版）、PyYAML（V4 配置和长期术语资产）。PDF 输出另需本地中文字体。
 - 可选依赖：`fonttools` 与 `brotli`（用于 HTML 字体子集化内嵌 `--embed-font`，免依赖系统字体）。
 
-命令示例以 Windows / PowerShell 书写（`C:/Windows/Fonts` 等）。macOS / Linux 上字体路径不同，跑 `translator_v4.py doctor` 生成本机 `fonts:` 配置；MinerU 凭据在非 Windows 系统用环境变量 `MINERU_TOKEN` 提供。
+命令示例以 Windows / PowerShell 书写（`C:/Windows/Fonts` 等）。macOS / Linux 上字体路径不同，跑 `translator_v4.py doctor` 生成本机 `fonts:` 配置；MinerU 凭据用环境变量 `MINERU_API_KEY` 或 `MINERU_TOKEN` 提供。
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -97,7 +90,7 @@ V4 命令在实际安装的技能目录运行。`prepare` 默认本地提取，�
 # 可选预检：依赖、字体探测，输出可粘贴的 fonts: 配置
 python -X utf8 scripts/translator_v4.py doctor --source paper.pdf
 
-python -X utf8 scripts/translator_v4.py prepare --source paper.pdf --work work/paper --extractor local
+python -X utf8 scripts/translator_v4.py prepare --source paper.pdf --work work/paper
 # 查看当前阶段与下一步；逐条记录待审项处理结论（自动重新 plan）
 python -X utf8 scripts/translator_v4.py status --work work/paper
 python -X utf8 scripts/translator_v4.py resolve --work work/paper --issue-key "<id|check|page>" --note "<handling>"
@@ -110,7 +103,7 @@ python -X utf8 scripts/translator_v4.py translate --work work/paper --translatio
 python -X utf8 scripts/translator_v4.py finish --work work/paper --translations work/paper/translations.json --reviewed --output outputs/paper.zh.pdf --font-dir C:/Windows/Fonts
 ```
 
-只在用户已经选择 MinerU 时给 prepare 使用 `--extractor mineru`，可选 `--mineru-cli`。两条命令均支持 `--config`；远程 provider 必须由用户明确配置，可能产生外部服务费用。详见 [宿主交接和 API](references/v4.md)。默认书目在原页，引用目录另存 `bibliography`；只有明确授权追加书目才设置 `explicitappendrefs=true`。
+`prepare` 的 `--extractor` 可以是 `auto`（默认）、`mineru` 或 `local`，可选 `--mineru-cli`。命令均支持 `--config`；远程 provider 必须由用户明确配置，可能产生外部服务费用。详见 [宿主交接和 API](references/v4.md)。默认书目在原页，引用目录另存 `bibliography`；只有明确授权追加书目才设置 `explicitappendrefs=true`。
 
 ```powershell
 # 1. 导出高质感 HTML 阅读版（推荐内嵌思源宋体，跨平台效果需实测）

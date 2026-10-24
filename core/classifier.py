@@ -160,6 +160,26 @@ def reading_order(items, bounds):
     groups = column_groups([i["rect"] for i in items], bounds)
     for item, group in zip(items, groups):
         item["column"] = group
+    # MinerU reading order is the structural authority for blocks it claimed.
+    # Unclaimed leftovers sit between the claimed neighbours by vertical position.
+    if any("mineru_reading_index" in item for item in items):
+        claimed = [item for item in items if "mineru_reading_index" in item]
+        def mineru_key(item):
+            if "mineru_reading_index" in item:
+                return (item["mineru_reading_index"], 0, item["id"])
+            y = item["rect"][1]
+            before = [c["mineru_reading_index"] for c in claimed if c["rect"][1] <= y]
+            after = [c["mineru_reading_index"] for c in claimed if c["rect"][1] > y]
+            if before and after:
+                slot = (max(before) + min(after)) / 2
+            elif before:
+                slot = max(before) + 0.5
+            elif after:
+                slot = min(after) - 0.5
+            else:
+                slot = 0
+            return (slot, 1, item["id"])
+        return sorted(items, key=mineru_key)
     anchors = sorted((i for i in items if i["column"] == "full"), key=lambda i: (i["rect"][1], i["rect"][0], i["id"]))
     def key(item):
         b = item["rect"]

@@ -1,11 +1,12 @@
 """Five-layer workflow: local parsing, classification, routing, terminology, rebuild."""
-import json,subprocess,sys,hashlib,shutil,re
+import json,hashlib,shutil,re
 from pathlib import Path
 from copy import deepcopy
 import pymupdf as fitz
 from .pdf_reader import parse
 from .classifier import classify
-from .paragraphs import link_paragraphs
+from .paragraphs import link_paragraphs, load_mineru_items
+from .mineru_hybrid import extract_with_mineru, fuse_mineru, mineru_configured
 from .layout import compile_layout,LayoutError
 from .rebuild import rebuild,legacy
 from .validator import validate
@@ -71,7 +72,7 @@ def glyph_report(mapping,translations,config,font_dir):
         if missing:report[bid]=missing
     return report
 
-def prepare(source,work,config=None,extractor='local',mineru_cli=None,force=False):
+def prepare(source,work,config=None,extractor='auto',mineru_cli=None,force=False,*,reuse_extraction=False):
     work=Path(work);log=RunLog(work)
     # A2: never silently discard a reviewed map or frozen plan. Re-running prepare
     # would overwrite review_resolutions; require an explicit force to start fresh.
@@ -94,17 +95,41 @@ def prepare(source,work,config=None,extractor='local',mineru_cli=None,force=Fals
             if not stable.exists():
                 temporary=work/'source.pdf.tmp';shutil.copyfile(source,temporary);temporary.replace(stable)
         source=stable
-    with log.stage('parse',extractor=extractor,source_sha256=source_sha256):inspection=parse(source,work/'inspect')
+    requested=(extractor or 'auto').lower()
+    if requested not in {'auto','mineru','local'}:raise ValueError('Unknown extraction mode')
+    notes=[]
+    mode=requested
+    if requested=='auto':
+        if mineru_configured():mode='mineru'
+        else:
+            mode='local'
+            notes.append({'check':'mineru-not-configured','severity':'warning',
+                          'detail':'No MINERU_API_KEY, MINERU_TOKEN, or token file; local extraction used.'})
+    with log.stage('parse',extractor=requested,source_sha256=source_sha256):inspection=parse(source,work/'inspect')
     write(work/'inspect/source.json',inspection)
-    if extractor=='mineru':
-        command=[sys.executable,'-X','utf8',str(Path(__file__).resolve().parents[1]/'scripts/mineru_extract.py'),
-                 '--source',str(source),'--output',str(work/'extraction'),'--mode','precision']
-        if mineru_cli:command+=['--cli',str(mineru_cli)]
-        with log.stage('mineru'):subprocess.run(command,check=True)
-    elif extractor!='local':raise ValueError('Unknown extraction mode')
+    used=mode
+    if mode=='mineru':
+        staged=reuse_extraction and bool(load_mineru_items(work/'extraction'))
+        if staged:
+            ok,detail=True,''
+        else:
+            with log.stage('mineru'):ok,detail=extract_with_mineru(source,work/'extraction',mineru_cli)
+        if not ok:
+            if requested=='auto':
+                used='local'
+                notes.append({'check':'mineru-fallback','severity':'warning','detail':detail or 'MinerU extraction failed; local extraction used.'})
+            else:raise ValueError(detail or 'MinerU extraction failed')
     with log.stage('classify'):
         mapping=classify(inspection)
-        link_paragraphs(mapping, work/'extraction' if extractor=='mineru' else None)
+        if used=='mineru':
+            report=fuse_mineru(mapping, work/'extraction')
+            if not report.get('applied'):
+                notes.append({'check':'mineru-structure-missing','severity':'warning',
+                              'detail':report.get('reason') or 'MinerU content list missing; geometric paragraphs used.'})
+                link_paragraphs(mapping, None)
+                used='local'
+        else:link_paragraphs(mapping, None)
+    mapping['extraction']={'requested':requested,'extractor':used,'warnings':notes}
     mapping['source_path']=str(Path(source).resolve())
     mapping['source_sha256']=source_sha256
     mapping['workflow_version']='4.1'
