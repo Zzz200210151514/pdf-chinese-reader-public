@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pymupdf as fitz
 
+from .stacked_selectivity import apply_pua_digits, synthesize_stacked_selectivity
+
 
 def stable_id(page, bbox, text, prefix="T"):
     """Content/location identity, independent of extraction order and other blocks.
@@ -203,6 +205,9 @@ def records_from_pages(pages):
                       "bbox": list(block["bbox"]), "text": text,
                       "tight_bbox": list(block.get("nonwhitespace_bbox", block["bbox"])),
                       "lines": block.get("lines", []), "original_block_index": index}
+            if block.get("stacked_selectivity"):
+                record["stacked_selectivity"] = True
+                record["stacked_markup"] = block.get("stacked_markup") or ""
             visible_lines = [visible_line_bbox(l, block["bbox"]) for l in block.get("lines", []) if block_text({"lines": [l]})]
             if visible_lines:
                 record["tight_bbox"] = _union(visible_lines)
@@ -232,8 +237,15 @@ def parse(source, render_dir=None):
     with fitz.open(source) as doc:
         for pn, page in enumerate(doc, 1):
             blocks = page.get_text("dict", sort=False)["blocks"]
-            annotate_visible_geometry(blocks, page.get_text("rawdict", sort=False)["blocks"])
-            annotate_decorative_ink(page,blocks)
+            raw_blocks = page.get_text("rawdict", sort=False)["blocks"]
+            # PUA digits (CHI 760E) must be ASCII before geometry compares span
+            # text with raw chars. Stacked selectivity is rebuilt after ink
+            # annotation so the raw/dict block lists stay aligned.
+            apply_pua_digits(blocks)
+            apply_pua_digits(raw_blocks)
+            annotate_visible_geometry(blocks, raw_blocks)
+            annotate_decorative_ink(page, blocks)
+            synthesize_stacked_selectivity(blocks)
             for block in blocks:
                 if "image" in block:
                     block["image_sha256"] = hashlib.sha256(block["image"]).hexdigest()
