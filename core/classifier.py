@@ -16,11 +16,11 @@ CAPTION = re.compile(r"^(?P<kind>Fig(?:ure)?\.?|Table)\s*(?P<number>\d+)\s*(?:[.
 REF_HEAD = re.compile(r"^(?:references(?: and notes)?|bibliography)\s*[.:]?\s*$", re.I)
 REF_START = re.compile(r"^\s*(?:\[(\d{1,3})\]|\((\d{1,3})\)|(\d{1,3})\.)\s+")
 POST_REF = re.compile(r"^(?:acknowledg\w*|author contributions|author information|funding|competing interests|conflicts? of interest|declaration\w*|supporting information|supplementary information|data availability|code availability|additional information|associated content|notes)\b", re.I)
-MATH = re.compile(r"[=≈≠≤≥∑∫√×±→⇌⇋↔⇄⟶]")
+MATH = re.compile(r"[=≈≠≤≥∑∫√×±−→⇌⇋↔⇄⟶\x80-\x9f]")
 META = re.compile(r"\b(?:university|institute|department|laboratory|college|correspondence|e-?mail|orcid|received|accepted|published online)\b|@", re.I)
 UNIT = re.compile(r"^(?:[-+−]?\d[\d.,]*\s*)?(?:[μµmnpk]?m|[μµmnpk]?g|s|K|°C|eV|keV|mol|mmol|M|mM|Hz|kHz|MPa|Pa|%)(?:[−-]?\d+|[²³])?(?:\s*[/·]\s*\w+(?:[−-]?\d+|[²³])?)*$")
 MICRO_EQ_NUMBER = re.compile(r"^\(\d{1,3}\)[.,;:]?$")
-MICRO_NATIVE_CHARS = re.compile(r"^[A-Za-z0-9()\[\]{}+\-−·.,;:/]+$")
+MICRO_NATIVE_CHARS = re.compile(r"^[A-Za-z0-9()\[\]{}+\-−·.,;:/α-ωΑ-Ω\x80-\x9f]+$")
 MICRO_STOPWORDS = {'a', 'an', 'the', 'we', 'it', 'is', 'in', 'on', 'of', 'to', 'and',
                    'or', 'as', 'at', 'by', 'for', 'from', 'with', 'this', 'that', 'no'}
 
@@ -63,6 +63,8 @@ def adapted_body_size(source_pt):
         source_pt = float(source_pt)
     except (TypeError, ValueError):
         source_pt = 9
+    if source_pt < 7.8:
+        return round(source_pt, 1)
     return min(9.5, max(8.5, round(source_pt * 1.05, 1)))
 
 
@@ -309,6 +311,7 @@ def classify(inspection):
         running.update(page_running)
     repeated = {k for k, n in running.items() if n >= 2 and n >= len(pages)*.5}
     in_refs = False
+    seen_ref_head = False
     refs_by_number = {}
     last_ref = None
     reference_style = None
@@ -319,9 +322,9 @@ def classify(inspection):
         # operator nearby. Italic fonts alone never turn prose into a formula.
         equation_zones = []
         math_glyphs = [s['bbox'] for r in source for l in r.get('lines',[]) for s in l.get('spans',[])
-                       if 'mathematica' in s.get('font','').lower() and s.get('text','').strip()]
+                       if 'math' in s.get('font','').lower() and s.get('text','').strip()]
         for r in source:
-            if not re.fullmatch(r'\(\d{1,3}\)', r['text'].strip()): continue
+            if not re.search(r'(?:^|\n)\s*\(\d{1,3}\)\s*$', r['text'].strip()): continue
             number = r['bbox']
             seeds = [b for b in math_glyphs if 0 <= number[0]-b[2] <= body*30
                      and max(b[1]-number[3], number[1]-b[3], 0) <= body*1.5]
@@ -357,10 +360,14 @@ def classify(inspection):
         abstract_tops = [r["bbox"][1] for r in source if any(normalize_heading(block_text({"lines": [l]})) == "abstract" for l in r.get("lines", []))
                          or re.match(r"^abstract\b", r["text"], re.I)]
         metadata_limit = min(abstract_tops) if abstract_tops else bounds[1]+(bounds[3]-bounds[1])*.3
+        caption_boxes = [r.get("tight_bbox", r["bbox"]) for r in source
+                         if len(r["text"]) >= 80 and re.search(r"\b[a-z]{4,}\b", r["text"])
+                         and re.match(r"^(?:Fig(?:ure)?\.?|Table)\s*\d+", r["text"], re.I)]
         vectors = [b for b in page.get("drawing_clusters", [])
                    if b[2]-b[0] >= 30 and b[3]-b[1] >= 30
                    and (b[2]-b[0])*(b[3]-b[1]) < .6*(bounds[2]-bounds[0])*(bounds[3]-bounds[1])
-                   and not any(contains(b, p) for p in long_prose)]
+                   and not any(contains(b, p) for p in long_prose + caption_boxes)
+                   and not any(contains(t, b) or contains(b, t) for t in tables)]
         prose_lines = []
         for r in source:
             full_prose = r.get("tight_bbox", r["bbox"]) in long_prose
@@ -675,15 +682,21 @@ def classify(inspection):
         # parent so reading order stays correct.
         captions_here = [e for e in entries if e["type"] == "caption"]
         for cap in captions_here:
+            c = list(cap["rect"])
             for other in entries:
-                if other is cap or len(other["source_text"]) > 25:
+                if other is cap:
                     continue
-                o, c = other["rect"], cap["rect"]
-                if o[0] >= c[0]-1 and o[1] >= c[1]-1 and o[2] <= c[2]+1 and o[3] <= c[3]+1:
+                o = other["rect"]
+                if len(other["source_text"]) <= 25 and o[0] >= c[0]-1 and o[1] >= c[1]-1 and o[2] <= c[2]+1 and o[3] <= c[3]+1:
                     other.update(type="paragraph", role="inline-fragment",
                                  paragraph_start=False, inline_fragment_of=[cap["id"]],
                                  translation_required=True)
                     other.pop("preservation_reason", None)
+                elif (other["type"] == "paragraph"
+                      and abs(float(other.get("source_font_pt") or 0) - float(cap.get("source_font_pt") or 0)) <= 0.5
+                      and abs(o[0] - c[0]) <= 4 and -12 <= o[1] - c[3] <= 6):
+                    other["type"] = "caption"
+                    c[3] = max(c[3], o[3])
         entries = reading_order(entries, bounds)
         titles = [b for b in entries if b["type"] == "title"]
         if titles:
@@ -712,6 +725,7 @@ def classify(inspection):
             text = entry["source_text"]
             if REF_HEAD.fullmatch(normalize_heading(text)):
                 in_refs = True
+                seen_ref_head = True
                 reference_style = None
                 entry["role"] = "reference-heading"
                 continue
@@ -720,6 +734,11 @@ def classify(inspection):
             if in_refs and POST_REF.match(normalize_heading(text)):
                 in_refs = False
                 last_ref = None
+            elif (seen_ref_head and not in_refs and not POST_REF.match(normalize_heading(text))
+                  and re.search(r"\b(?:19|20)\d{2}[a-z]?\b", text)
+                  and (re.search(r"\bdoi\b|https?://", text, re.I)
+                       or (len(re.findall(r"[A-Z]\.", text)) >= 2 and re.search(r"\(\s*(?:19|20)\d{2}[a-z]?\s*\)", text)))):
+                in_refs = True
             # Floating figures/captions may interrupt a bibliography and then
             # numbering resumes. Do not append a caption to the preceding ref.
             caption_candidate=bool(CAPTION.match(text))

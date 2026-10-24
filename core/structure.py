@@ -153,7 +153,7 @@ def preflight(mapping, inspection=None):
     # Routine classifier candidates are suggestions. They must not stop plan;
     # a reviewer can still record a decision, but dispatch does not wait on them.
     BENIGN_REVIEW = {'inline-fragment-placement', 'caption-candidate-without-geometry',
-                     'bibliography-continuation-candidate'}
+                     'bibliography-continuation-candidate', 'unnumbered-reference-candidate'}
     resolutions = mapping.get('review_resolutions', {})
     for i, issue in enumerate(mapping.get('issues', [])):
         key = issue.get('id', '')+'|'+issue['check']+'|'+str(issue.get('page', ''))

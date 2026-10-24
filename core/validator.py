@@ -21,7 +21,7 @@ def protected_pixel_level(kind,src_text,out_text,diff_percent):
     return 'warning'
 def normalize(text):
     import unicodedata
-    return re.sub(r'\s+','',unicodedata.normalize('NFKC',html.unescape(re.sub(r'<[^>]*>','',text)))).replace('−','-').replace('∙','·')
+    return re.sub(r'[\s\x80-\x9f\ue000-\uf8ff\U000f0000-\U0010ffff]+','',unicodedata.normalize('NFKC',html.unescape(re.sub(r'<[^>]*>','',text)))).replace('−','-').replace('∙','·')
 
 def _text_covers(expected, actual):
     """True when every expected character is present, allowing neighbor bleed.

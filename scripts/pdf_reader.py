@@ -104,7 +104,7 @@ def check_layout(source,m,fontdir):
                                    'action':'Provide a covering fonts.fallback or explicit sub/sup markup; do not emit tofu glyphs.'})
                     continue
                 spare,scale=fit_only(item,bounds,fonts,css,archive)
-                body_paragraph=item.get('block_type') in ('paragraph','abstract')
+                body_paragraph=item.get('block_type') in ('paragraph','abstract','caption')
                 if spare<0:
                     original_leading=float(item.get('leading',1.35))
                     plain=Plain(item['html']).text()
@@ -187,7 +187,7 @@ def check_layout(source,m,fontdir):
 
 def _unify_paragraph_typography(manifest, fonts, css, archive, fits, warnings, issues):
     """One logical paragraph, including box A and box B, uses one size and leading."""
-    failed={i.get('id') for i in issues if i.get('check')=='overflow'}
+    failed={i.get('id') for i in issues if i.get('id')}
     grouped={}
     for spec in manifest.get('pages',[]):
         for item in spec.get('regions',[]):
@@ -215,12 +215,17 @@ def _unify_paragraph_typography(manifest, fonts, css, archive, fits, warnings, i
             return found
         refits=refit_all()
         if any(spare<0 for _,spare,_ in refits):
-            worst=min((scale if scale>0 else 0.85) for _,spare,scale in refits if spare<0)
-            target=round(target*max(worst,0.85),2)
+            scales=[fit_only(m,None,fonts,css,archive,scale_low=0)[1] for m,spare,_ in refits if spare<0]
+            worst=min((s if s>0 else 0.85) for s in scales) if scales else 0.85
+            target=round(target*max(worst*0.99,0.85),2)
             for m in members:
                 m['size']=target
-                m['min_scale']=0.85
+                m['min_scale']=1.0
             refits=refit_all()
+            if any(spare<0 for _,spare,_ in refits):
+                for m in members:
+                    m['min_scale']=0.85
+                refits=refit_all()
         for m,spare,scale in refits:
             page=m.pop('_page',None)
             m.pop('_fit_scale',None)

@@ -17,7 +17,7 @@ from .classifier import adapted_body_size, intersects
 
 _TAG = re.compile(r'</?(?:sup|sub|i|b|a)\b[^>]*>', re.I)
 _ATOMIC = re.compile(
-    r'(?is)(<a\b[^>]*>.*?</a>|<sup\b[^>]*>.*?</sup>|<sub\b[^>]*>.*?</sub>|<i\b[^>]*>.*?</i>|<[^>]+>)')
+    r'(?is)(<a\b[^>]*>.*?</a>|[A-Za-z0-9@._+-]+(?:\s*<(?:sup|sub)\b[^>]*>.*?</(?:sup|sub)>[A-Za-z0-9._+-]*)*|<sup\b[^>]*>.*?</sup>|<sub\b[^>]*>.*?</sub>|<i\b[^>]*>.*?</i>|<[^>]+>)')
 _HEADING = re.compile(
     r'^(?:\d+(?:\.\d+)*[.)]?\s*)?(?:introduction|experimental|experiments|results|discussion|'
     r'conclusion|conclusions|methods|materials|highlights|keywords|abstract|references|'
@@ -39,13 +39,15 @@ def _is_heading_text(text):
         return False
     if _HEADING.match(plain):
         return True
+    if re.match(r'^\d+(?:\.\d+)+\s+[A-Z]', plain) and not _SENTENCE_END.search(plain):
+        return True
     letters = re.sub(r'[^A-Za-z]', '', plain)
     return bool(letters and letters.upper() == letters and re.search(r'[A-Z]{3,}', plain) and len(plain.split()) <= 8)
 
 
 def prose_member(block):
     return (block.get('translation_required', True)
-            and block.get('type') in {'paragraph', 'abstract'}
+            and block.get('type') in {'paragraph', 'abstract', 'caption'}
             and not block.get('bold')
             and not _is_heading_text(block.get('source_text', ''))
             and block.get('role') not in {'metadata', 'reference-heading', 'post-reference-heading'})
@@ -61,6 +63,8 @@ def _continues_lexically(nxt):
     if not plain:
         return False
     if nxt.get('role') == 'inline-fragment':
+        return True
+    if re.match(r'^\([A-Za-z0-9+\-]{1,4}\)\s+[a-z]', plain):
         return True
     first = plain.lstrip('([{"\'')
     if not first:
@@ -91,6 +95,8 @@ def continues(prev, nxt, page_bounds):
     if abs(ps - ns) > 1.5:
         return False
     if prev['source_page'] == nxt['source_page'] and intersects(prev['rect'], nxt['rect']):
+        if prev.get('type') == 'caption' and nxt.get('type') == 'caption' and abs(prev['rect'][0] - nxt['rect'][0]) <= 4:
+            return True
         # Overlapping fragments share one typeset region; linking is decided by
         # the caller only when they are inline pieces of the same sentence.
         return nxt.get('role') == 'inline-fragment' or prev.get('role') == 'inline-fragment'
@@ -104,10 +110,11 @@ def continues(prev, nxt, page_bounds):
         same_baseline = abs((prev['rect'][1] + prev['rect'][3]) / 2 - (nxt['rect'][1] + nxt['rect'][3]) / 2) <= max(ps, ns)
         if pc == nc and same_baseline and -2 <= gap_x <= ps * 8:
             return True
-        if pc == nc and pc != 'full' and -1 <= gap_y <= max(ps * 0.85, 8) and abs(prev['rect'][0] - nxt['rect'][0]) <= ps * 4:
+        if (pc == nc and (pc != 'full' or prev.get('type') == 'caption')
+                and -12 <= gap_y <= max(ps * 0.85, 8) and abs(prev['rect'][0] - nxt['rect'][0]) <= ps * 4):
             return True
         height = bounds[3] - bounds[1]
-        if pc == 'left' and nc == 'right' and prev['rect'][3] > bounds[1] + height * 0.72 and nxt['rect'][1] < bounds[1] + height * 0.38:
+        if pc == 'left' and nc == 'right' and prev['rect'][3] > bounds[1] + height * 0.65 and nxt['rect'][1] < bounds[1] + height * 0.72:
             return True
         return False
     if nxt['source_page'] != prev['source_page'] + 1:
@@ -118,8 +125,8 @@ def continues(prev, nxt, page_bounds):
     height = bounds[3] - bounds[1]
     nxt_height = nxt_bounds[3] - nxt_bounds[1]
     pc, nc = _column(prev['rect'], bounds), _column(nxt['rect'], nxt_bounds)
-    low = prev['rect'][3] > bounds[1] + height * 0.72
-    high = nxt['rect'][1] < nxt_bounds[1] + nxt_height * 0.32
+    low = prev['rect'][3] > bounds[1] + height * 0.65
+    high = nxt['rect'][1] < nxt_bounds[1] + nxt_height * 0.88
     return bool(low and high and (pc == nc or {pc, nc} <= {'left', 'right', 'full'}))
 
 
@@ -147,7 +154,7 @@ def _link(members):
     gid = 'lp-' + members[0]['id']
     merged = merge_source(b.get('source_text', '') for b in members)
     sources = [float(b.get('source_font_pt') or b.get('size') or 9) for b in members]
-    size = adapted_body_size(min(sources))
+    size = min(float(b.get('size') or 8) for b in members) if members[0].get('type') == 'caption' else adapted_body_size(min(sources))
     leading = float(members[0].get('leading') or 1.17)
     for index, block in enumerate(members):
         block['logical_paragraph_id'] = gid
@@ -273,10 +280,19 @@ def link_paragraphs(mapping, extraction_dir=None):
     MinerU grouping wins when an extraction is available. Geometric continuation
     links whatever MinerU did not claim, and is the only linker otherwise.
     """
+    from .classifier import reading_order
     from .structure import source_order
     order = source_order(mapping)
     rank = {ident: index for index, ident in enumerate(order)}
-    blocks = sorted(mapping.get('blocks', []), key=lambda b: (b.get('source_page', 0), rank.get(b['id'], 10**9)))
+    page_rects = {p['source_page']: p['rect'] for p in mapping.get('pages', [])}
+    full_rank = {}
+    cursor = 0
+    for pn in sorted(page_rects):
+        page_blocks = [b for b in mapping.get('blocks', []) if b.get('source_page') == pn]
+        for b in reading_order(page_blocks, page_rects[pn]):
+            full_rank[b['id']] = cursor
+            cursor += 1
+    blocks = sorted(mapping.get('blocks', []), key=lambda b: (b.get('source_page', 0), full_rank.get(b['id'], rank.get(b['id'], 10**9))))
     page_bounds = {p['source_page']: p['rect'] for p in mapping.get('pages', [])}
     assigned = set()
     if extraction_dir:
@@ -284,20 +300,45 @@ def link_paragraphs(mapping, extraction_dir=None):
             _link(group)
             assigned.update(b['id'] for b in group)
     current = []
+    cap_current = []
 
     def flush():
         if len(current) >= 2:
             _link(list(current))
         current.clear()
 
+    def flush_cap():
+        if len(cap_current) >= 2:
+            _link(list(cap_current))
+        cap_current.clear()
+
     for block in blocks:
-        if block['id'] in assigned or not prose_member(block):
+        if block['id'] in assigned:
             flush()
+            flush_cap()
+            continue
+        if block.get('type') == 'caption' and prose_member(block):
+            if cap_current and not continues(cap_current[-1], block, page_bounds):
+                flush_cap()
+            cap_current.append(block)
+            continue
+        flush_cap()
+        if not prose_member(block):
+            if block.get('type') in {'header', 'footer', 'figure', 'caption', 'table'} or block.get('role') == 'metadata':
+                # Floating figures, tables, captions and running headers/footers
+                # sit between columns or pages without ending the running sentence.
+                continue
+            flush()
+            continue
+        if (current and _open_sentence(current[-1].get('source_text', ''))
+                and (re.match(r'^(?:abbreviations|footnotes?|notes?)\s*:|^(?:fig(?:ure)?\.?|table)\s*\d+\b', plain_text(block.get('source_text', '')), re.I)
+                     or (float(block.get('source_font_pt') or 9) <= 7.5 and float(current[-1].get('source_font_pt') or 9) >= 8.5))):
             continue
         if current and not continues(current[-1], block, page_bounds):
             flush()
         current.append(block)
     flush()
+    flush_cap()
     return mapping
 
 

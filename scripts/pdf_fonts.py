@@ -68,6 +68,9 @@ class GlyphHTML(HTMLParser):
 
     def handle_data(self, data):
         for ch in data:
+            cp = ord(ch)
+            if 0x80 <= cp <= 0x9F or 0xE000 <= cp <= 0xF8FF or 0xF0000 <= cp <= 0x10FFFD:
+                continue
             escaped = html.escape(ch)
             if ch.isspace() or self.fonts.has(ch, self.bold or self.bold_depth > 0):
                 self.parts.append(escaped)
