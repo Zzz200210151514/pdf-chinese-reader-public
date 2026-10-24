@@ -10,7 +10,7 @@ from copy import deepcopy
 import hashlib
 import re
 
-from .pdf_reader import block_text, records_from_pages, script_markup, stable_id, visible_line_bbox
+from .pdf_reader import block_text, records_from_pages, script_markup, stable_id, valid_bbox, visible_line_bbox
 from .stacked_selectivity import (
     apply_pua_digits, is_stacked_script_fragment, same_visible_chars, synthesize_stacked_selectivity)
 
@@ -170,6 +170,76 @@ def intersects(a, b):
 
 def contains(a, b, tolerance=1):
     return a[0]-tolerance <= b[0] and a[1]-tolerance <= b[1] and a[2]+tolerance >= b[2] and a[3]+tolerance >= b[3]
+
+
+def _box_area(box):
+    return max(0.0, box[2]-box[0]) * max(0.0, box[3]-box[1])
+
+
+def _overlap_of_smaller(a, b):
+    """Intersection area divided by the smaller box, or 0 when they miss."""
+    width = min(a[2], b[2]) - max(a[0], b[0])
+    height = min(a[3], b[3]) - max(a[1], b[1])
+    if width <= 0 or height <= 0:
+        return 0.0
+    smaller = min(_box_area(a), _box_area(b))
+    if smaller <= 0:
+        return 0.0
+    return (width * height) / smaller
+
+
+# ACS/EST back-matter labels. The whole block is the heading; a sentence that
+# merely mentions authors ("The authors declare...") is not one of these.
+_AUTHOR_SECTION = re.compile(
+    r"^(?:co[-\s]?)?(?:corresponding\s+)?authors?(?:\(\s*s\s*\))?$",
+    re.I)
+
+
+def author_section_heading(text):
+    """True for Authors / Corresponding Authors and the close ACS/EST variants.
+
+    Affiliation lines in these sections use a minus sign (U+2212). That glyph
+    is also a math operator, so a nearby heading was being swallowed into a
+    formula zone. These labels are section headers and must be translated.
+    """
+    raw = re.sub(r"<[^>]+>", "", text or "")
+    raw = re.sub(r"\s+", " ", raw.replace("\n", " ")).strip()
+    raw = raw.strip("*†‡§¶∗#•· \t")
+    raw = raw.rstrip(".:;").strip()
+    return bool(_AUTHOR_SECTION.fullmatch(raw))
+
+
+def _promote_drawing_cluster(box, bounds, text_boxes):
+    """Whether a drawing cluster should become a protected figure.
+
+    A cluster that covers long prose, an abstract, or a caption is a frame
+    around text, not a figure. A wide short band is decorative even when it
+    misses those boxes. Extracted clusters are rectangles only: PyMuPDF
+    ``cluster_drawings`` does not report stroke or ink density, so near-empty
+    hollow clusters are not demoted here.
+    """
+    if not valid_bbox(box):
+        return False
+    width, height = box[2]-box[0], box[3]-box[1]
+    if width < 30 or height < 30:
+        return False
+    page_w, page_h = bounds[2]-bounds[0], bounds[3]-bounds[1]
+    if page_w <= 0 or page_h <= 0:
+        return False
+    if width * height >= .6 * page_w * page_h:
+        return False
+    if width >= .85 * page_w and height < .35 * page_h:
+        return False
+    if any(_overlap_of_smaller(box, text) > .15 for text in text_boxes):
+        return False
+    return True
+
+
+def _append_protected(protected, ident, box, kind):
+    """Drop non-finite, swapped, or zero-area rectangles before they are written."""
+    if not valid_bbox(box):
+        return
+    protected.append({"id": ident, "rect": list(box), "type": kind})
 
 
 def dominant(lines):
@@ -441,10 +511,14 @@ def classify(inspection):
         caption_boxes = [r.get("tight_bbox", r["bbox"]) for r in source
                          if len(r["text"]) >= 80 and re.search(r"\b[a-z]{4,}\b", r["text"])
                          and re.match(r"^(?:Fig(?:ure)?\.?|Table)\s*\d+", r["text"], re.I)]
+        abstract_boxes = [r.get("tight_bbox", r["bbox"]) for r in source
+                          if re.match(r"^abstract\b", r["text"], re.I)
+                          or any(normalize_heading(block_text({"lines": [l]})) == "abstract"
+                                 for l in r.get("lines", []))]
+        # Partial overlap is enough. Full containment misses an abstract whose
+        # box sticks out of a decorative frame by a few dozen points.
         vectors = [b for b in page.get("drawing_clusters", [])
-                   if b[2]-b[0] >= 30 and b[3]-b[1] >= 30
-                   and (b[2]-b[0])*(b[3]-b[1]) < .6*(bounds[2]-bounds[0])*(bounds[3]-bounds[1])
-                   and not any(contains(b, p) for p in long_prose + caption_boxes)
+                   if _promote_drawing_cluster(b, bounds, long_prose + caption_boxes + abstract_boxes)
                    and not any(contains(t, b) or contains(b, t) for t in tables)]
         prose_lines = []
         for r in source:
@@ -537,13 +611,19 @@ def classify(inspection):
                         named_absorbed.add(tuple(round(v, 1) for v in block))
                         changed = True
             math_zones[i] = [expanded[0]-.5, expanded[1]-.5, expanded[2]+.5, expanded[3]+.5]
-        protected = [{"id": r["id"], "rect": r["bbox"], "type": "figure"}
-                     for r in source if r["type"] == "figure"]
+        protected = []
+        for r in source:
+            if r["type"] == "figure":
+                _append_protected(protected, r["id"], r["bbox"], "figure")
         # Native tables and vector figures receive protection even without image
         # objects. Their labels are recorded rather than silently filtered out.
+        # Invalid rectangles are never written; the structure gate must not be
+        # asked to reject a box this pass already knows is empty or swapped.
         for kind, objects in (("table", tables), ("figure", vectors)):
             for box in objects:
-                protected.append({"id": stable_id(pn, box, "", kind[0].upper()), "rect": box, "type": kind})
+                if not valid_bbox(box):
+                    continue
+                _append_protected(protected, stable_id(pn, box, "", kind[0].upper()), box, kind)
         entries = []
         for r in source:
             if r["type"] == "figure":
@@ -750,6 +830,16 @@ def classify(inspection):
                                         for l in lines for s in l.get("spans", []) if s.get("text", "").strip())):
                             box = [box[0], box[1], box[2], round(img[1] - 0.05, 3)]
                             entry["rect"] = list(box)
+                # Authors / Corresponding Authors sit beside affiliation lines
+                # that contain U+2212. That minus sign seeds a math zone and
+                # the heading was frozen as a formula. It is a section header
+                # and stays in the translation queue.
+                if author_section_heading(text):
+                    kind = "header"
+                    reason = None
+                    entry["role"] = "section-heading"
+                    entry.pop("inline_fragment_of", None)
+                    entry["paragraph_start"] = True
                 entry["type"] = kind
                 if reason:
                     entry.update(translation_required=False, preservation_reason=reason)
