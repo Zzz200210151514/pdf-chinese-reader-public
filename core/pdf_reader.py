@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import io
+import math
 from pathlib import Path
 
 import pymupdf as fitz
@@ -20,6 +21,23 @@ def stable_id(page, bbox, text, prefix="T"):
     digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False,
                                       separators=(",", ":")).encode()).hexdigest()
     return f"P{int(page):03}{prefix}{digest[:20]}"
+
+
+def valid_bbox(box):
+    """True for a finite rectangle with positive width and height.
+
+    Swapped corners (``x2 <= x1`` or ``y2 <= y1``), NaN, and zero-area boxes
+    are not protection geometry. Callers drop them instead of writing a
+    rectangle the structure gate must reject.
+    """
+    if not isinstance(box, (list, tuple)) or len(box) != 4:
+        return False
+    try:
+        x0, y0, x1, y1 = (float(v) for v in box)
+    except (TypeError, ValueError):
+        return False
+    return (math.isfinite(x0) and math.isfinite(y0) and math.isfinite(x1) and math.isfinite(y1)
+            and x1 > x0 and y1 > y0)
 
 
 def block_text(block):
@@ -170,6 +188,10 @@ def records_from_pages(pages):
         pn = page["source_page"]
         for index, block in enumerate(page.get("blocks", [])):
             is_image = block.get("type") == 1
+            # A degenerate image box cannot be protected and must not become a
+            # figure record the structure gate then demands coverage for.
+            if is_image and not valid_bbox(block.get("bbox")):
+                continue
             text = "" if is_image else block_text(block)
             if not text and not is_image:
                 continue
