@@ -7,7 +7,10 @@ import re
 
 from .classifier import classify, column_groups, intersects, union
 from .redaction import split_masks
-from .citations import restore_citations, object_colours, canonical, author_year_colours
+from .citations import (
+    author_year_colours, canonical, caption_title_ink, dominant_link_blue,
+    object_colours, restore_citations, usable_link_hex,
+)
 from .paragraphs import prepare_render_text
 
 
@@ -22,12 +25,29 @@ def create_source_map(inspection):
     return classify(inspection)
 
 
-def _markup(text, known, colours=None, citation_tokens=(), author_years=None):
+def _markup(text, known, colours=None, citation_tokens=(), author_years=None,
+            link_blue=None, caption_key=None, caption_ink=None):
     colours = colours or {}
     author_years = author_years or {}
-    def anchor(key, label):
-        colour = colours.get(key, '#0000ff')
-        return f'<a href="https://pdf-reader.invalid/{key}" style="color:{colour};text-decoration:none">{label}</a>'
+    link_blue = usable_link_hex(link_blue)
+    caption_open = bool(caption_key and caption_ink)
+    def anchor(key, label, colour=None):
+        # Missing or non-blue source ink uses the paper's dominant link blue.
+        # Pure #0000ff is never invented here.
+        if colour is None:
+            colour = usable_link_hex(colours.get(key)) or link_blue
+        if colour:
+            style = f'color:{colour};text-decoration:none'
+        else:
+            style = 'text-decoration:none'
+        return f'<a href="https://pdf-reader.invalid/{key}" style="{style}">{label}</a>'
+    def linked(key, label):
+        nonlocal caption_open
+        # The caption's own title keeps body ink. Later mentions are cross-refs.
+        if caption_open and key == caption_key:
+            caption_open = False
+            return anchor(key, label, colour=caption_ink)
+        return anchor(key, label)
     escaped = html.escape(text).replace("\n", "<br/>")
     escaped = re.sub(r"&lt;(/?(?:sub|sup|b|i|strong|em))&gt;", r"<\1>", escaped)
     escaped = re.sub(r"\^\{([^{}\n]+)\}", r"<sup>\1</sup>", escaped)
@@ -37,7 +57,7 @@ def _markup(text, known, colours=None, citation_tokens=(), author_years=None):
         key = kind+"/"+n
         if key not in known:
             raise LayoutError([{"check": "missing-navigation-target", "id": key}])
-        return anchor(key, label or n)
+        return linked(key, label or n)
     escaped = re.sub(r"\[\[(fig|ref|table|eq):(\d+)(?:\|([^\]]+))?\]\]", explicit, escaped)
     # Tokenize to avoid creating nested anchors and to preserve superscript tags.
     parts = re.split(r"(<[^>]+>)", escaped)
@@ -46,7 +66,7 @@ def _markup(text, known, colours=None, citation_tokens=(), author_years=None):
         content = match[1]
         def number(m):
             key = "ref/"+m[0]
-            return anchor(key, m[0]) if key in known else m[0]
+            return linked(key, m[0]) if key in known else m[0]
         return "["+re.sub(r"\d+", number, content)+"]"
     def object_marker(match, context):
         prefix, n = match.groups()
@@ -54,7 +74,7 @@ def _markup(text, known, colours=None, citation_tokens=(), author_years=None):
             return match[0]
         kind = "fig" if prefix.lower().startswith(("fig", "图")) else "table" if prefix.lower().startswith(("table", "表")) else "eq"
         key = kind+"/"+n
-        return anchor(key, match[0]) if key in known else match[0]
+        return linked(key, match[0]) if key in known else match[0]
     for i, part in enumerate(parts):
         if part.startswith("<"):
             if re.match(r"<a\b", part):
@@ -138,6 +158,8 @@ def compile_layout(mapping, fonts=None):
     from .structure import source_order, audit_order
     prepare_render_text(mapping)
     blocks = mapping["blocks"]
+    link_blue = dominant_link_blue(
+        line for block in blocks for line in (block.get('source_lines') or []))
     rank = {ident: n for n, ident in enumerate(source_order(mapping))}
     ids = [b["id"] for b in blocks]
     if len(ids) != len(set(ids)) or set(ids) != set(mapping.get("expected_block_ids", ids)):
@@ -162,6 +184,7 @@ def compile_layout(mapping, fonts=None):
                 "fonts": resolve_fonts(fonts or mapping.get("fonts")),
                 "targets": targets, "references": bibliography if append_refs else [], "bibliography": bibliography,
                 "explicitappendrefs": append_refs,
+                "link_blue": link_blue,
                 "pages": [], "expected_block_ids": ids}
     for key in ("layout_mode", "requested_layout", "layout_change_authorized", "reference_layout"):
         if key in mapping:
@@ -219,7 +242,9 @@ def compile_layout(mapping, fonts=None):
                     issues.append(tagged)
             colours = {**object_colours(source_lines, known), **colours}
             ay = author_year_colours(source_lines)
-            markup = _markup(scientific_markup(text, source_lines), known, colours, citation_tokens, ay)
+            cap_key, cap_ink = caption_title_ink(source_lines) if b.get('type') == 'caption' else (None, None)
+            markup = _markup(scientific_markup(text, source_lines), known, colours, citation_tokens, ay,
+                             link_blue=link_blue, caption_key=cap_key, caption_ink=cap_ink)
             html = "<b>"+markup+"</b>" if b.get("bold") else markup
             absorbed_ids = list(b.get("absorbs") or [])
             source_ids = sorted({b["id"], *absorbed_ids}, key=lambda i: rank.get(i, len(rank)))

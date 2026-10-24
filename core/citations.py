@@ -96,27 +96,117 @@ def restore_citations(text, lines, known):
     for i, start, end, key in reversed(matches):
         if key not in bad and found[key] < expected[key]:
             parts[i] = parts[i][:start]+'<sup>'+parts[i][start:end]+'</sup>'+parts[i][end:]
-    colours = {'ref/'+n: colour for group, colour in groups if colour for n in re.findall(r'\d+', group)}
+    colours = {}
+    for group, colour in groups:
+        usable = usable_link_hex(colour)
+        if not usable:
+            continue
+        for n in re.findall(r'\d+', group):
+            colours['ref/'+n] = usable
     return ''.join(parts), {canonical(g) for g, _ in groups}, colours, issues
 
 
-def object_colours(lines, known):
-    colours = {}
+def _joined_spans(lines):
+    """Concatenate adjacent lines so a wrapped ``Figure`` / ``2a`` pair stays one ref."""
+    parts, offsets = [], []
     for line in lines or []:
-        spans = line.get('spans', [])
-        text = ''.join(s.get('text', '') for s in spans)
-        offsets = []
-        for span in spans:
-            offsets.extend([span] * len(span.get('text', '')))
-        for m in re.finditer(r'\b(Fig(?:ure)?\.?|Table|Eq(?:uation)?\.?)\s*\(?(\d+)', text, re.I):
-            kind = 'fig' if m[1].lower().startswith('fig') else 'table' if m[1].lower().startswith('table') else 'eq'
-            colour = _colour(offsets[m.start(2)])
-            if colour and kind+'/'+m[2] in known: colours[kind+'/'+m[2]] = colour
-        for group in re.finditer(r'\[(\d+(?:\s*[,–−-]\s*\d+)*)\]', text):
-            for number in re.finditer(r'\d+', group[1]):
-                colour = _colour(offsets[group.start(1)+number.start()])
-                if colour and 'ref/'+number[0] in known: colours['ref/'+number[0]] = colour
+        for span in line.get('spans') or []:
+            text = span.get('text') or ''
+            if not isinstance(text, str) or not text:
+                continue
+            parts.append(text)
+            offsets.extend([span] * len(text))
+    return ''.join(parts), offsets
+
+
+def _object_kind(word):
+    folded = word.lower()
+    if folded.startswith('fig'):
+        return 'fig'
+    if folded.startswith('table'):
+        return 'table'
+    return 'eq'
+
+
+def _link_hex(span):
+    """Journal link blue as ``#rrggbb``, or None for body ink and other colours."""
+    if not isinstance(span, dict) or not _is_link_blue(span.get('color')):
+        return None
+    return _colour(span)
+
+
+def usable_link_hex(value):
+    """Normalise a stored colour when it is journal link blue."""
+    if isinstance(value, int):
+        return _link_hex({'color': value})
+    if not isinstance(value, str) or not re.fullmatch(r'#[0-9A-Fa-f]{6}', value):
+        return None
+    return _link_hex({'color': int(value[1:], 16)})
+
+
+def object_colours(lines, known):
+    """Map fig/table/eq/ref keys to source link blue.
+
+    Adjacent lines are joined first, so a digit wrapped onto the next line
+    (``...(Figure`` / ``2a).``) contributes its own ink. Black caption titles
+    and other non-link colours are ignored and must not enter the map.
+    """
+    colours = {}
+    text, offsets = _joined_spans(lines)
+    if not text:
+        return colours
+
+    def paint(key, index):
+        if key not in known or index >= len(offsets):
+            return
+        colour = _link_hex(offsets[index])
+        if colour:
+            colours[key] = colour
+
+    for match in re.finditer(r'\b(Fig(?:ure)?\.?|Table|Eq(?:uation)?\.?)\s*\(?(\d+)', text, re.I):
+        paint(_object_kind(match[1])+'/'+match[2], match.start(2))
+    for group in re.finditer(r'\[(\d+(?:\s*[,–−-]\s*\d+)*)\]', text):
+        for number in re.finditer(r'\d+', group[1]):
+            paint('ref/'+number[0], group.start(1)+number.start())
     return colours
+
+
+_CAPTION_TITLE = re.compile(
+    r'\s*(Fig(?:ure)?\.?|Table|Eq(?:uation)?\.?)\s*\(?(\d+)', re.I)
+
+
+def caption_title_ink(lines):
+    """Body ink of a leading figure/table/equation label.
+
+    Returns ``(key, '#rrggbb')`` when the label is present and is not journal
+    link blue, so caption titles keep source body ink. Link-blue titles and
+    lines that do not open with a label return ``(None, None)``.
+    """
+    text, offsets = _joined_spans(lines)
+    match = _CAPTION_TITLE.match(text)
+    if not match or match.start(2) >= len(offsets):
+        return None, None
+    span = offsets[match.start(2)]
+    if _is_link_blue(span.get('color')):
+        return None, None
+    return _object_kind(match[1])+'/'+match[2], _colour(span) or '#000000'
+
+
+def dominant_link_blue(lines):
+    """Most common journal hyperlink blue across source lines, or None.
+
+    Each link-blue span counts once. Body ink, including black caption titles,
+    does not compete. Ties keep the colour encountered first.
+    """
+    counts = Counter()
+    for line in lines or []:
+        for span in line.get('spans') or []:
+            colour = _link_hex(span)
+            if colour:
+                counts[colour] += 1
+    if not counts:
+        return None
+    return counts.most_common(1)[0][0]
 
 
 # Author-year cite painted in journal link blue, e.g. "Kim et al., 2016".
