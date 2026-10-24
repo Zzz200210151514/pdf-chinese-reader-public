@@ -243,3 +243,74 @@ def parse(source, render_dir=None):
             "page_count": count, "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
             "pages": pages, "records": records, "id_to_original": originals,
             "issues": issues, "need_review": bool(issues)}
+
+
+def _script_position(span, spans):
+    """Return 'sup' or 'sub' for a short raised/lowered span, else None.
+
+    PDF superscript uses flag bit 0. Subscripts and many citation digits are
+    only visible as a smaller size on a shifted baseline. A whole line of
+    small type (no larger neighbor) is body text, not a script.
+    """
+    text = span.get('text', '')
+    if not text or text.strip() == '' or len(text.strip()) > 16:
+        return None
+    if '<sup>' in text or '<sub>' in text:
+        return None
+    flags = int(span.get('flags') or 0)
+    if flags & 1:
+        return 'sup'
+    try:
+        size = float(span.get('size') or 0)
+    except (TypeError, ValueError):
+        return None
+    origin = span.get('origin')
+    if not origin or size <= 0:
+        return None
+    bases = []
+    for other in spans:
+        if other is span or not other.get('text', '').strip():
+            continue
+        try:
+            other_size = float(other.get('size') or 0)
+        except (TypeError, ValueError):
+            continue
+        if other_size > size / .85 and other.get('origin'):
+            bases.append((other_size, other))
+    if not bases:
+        return None
+    base_size, base = max(bases, key=lambda item: item[0])
+    if not 0 < size < base_size * .85:
+        return None
+    try:
+        delta = float(origin[1]) - float(base['origin'][1])
+    except (TypeError, ValueError, IndexError):
+        return None
+    if abs(delta) < max(.4, base_size * .08):
+        return None
+    return 'sup' if delta < 0 else 'sub'
+
+
+def script_markup(lines):
+    """Serialize superscripts and subscripts already present in extracted spans.
+
+    Visible characters stay identical to ``block_text``; only ``<sup>`` and
+    ``<sub>`` are inserted. Existing tags are not wrapped again.
+    """
+    if not lines:
+        return ''
+    rendered = []
+    for line in lines:
+        spans = line.get('spans') or []
+        parts = []
+        for span in spans:
+            text = span.get('text', '')
+            if not text:
+                continue
+            position = _script_position(span, spans)
+            if position:
+                parts.append(f'<{position}>{text}</{position}>')
+            else:
+                parts.append(text)
+        rendered.append(''.join(parts))
+    return '\n'.join(rendered).strip()

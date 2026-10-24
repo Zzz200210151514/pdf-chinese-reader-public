@@ -7,6 +7,16 @@ import unicodedata
 ELEMENTS = 'H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr'.split()
 ELEMENT = '(?:' + '|'.join(sorted(ELEMENTS, key=len, reverse=True)) + ')'
 CHEM = re.compile(r'(?<![A-Za-z])(?:[¹²³⁴⁵⁶⁷⁸⁹⁰\d]+)?(?:' + ELEMENT + r'[₀-₉\d]*|\((?:' + ELEMENT + r'[₀-₉\d]*)+\)[₀-₉\d]*)+(?:[⁺⁻+−-]|[²³⁴⁵⁶⁷⁸⁹\d]+[⁺⁻+−-])?(?![A-Za-z])')
+# Element-symbol concatenation false-positives. These stay unfrozen unless the
+# match also carries a digit, charge or subscript (H2O, Fe3+, SO4).
+ROMAN_NUMERALS = {'II', 'III', 'IV', 'VI', 'VII', 'VIII', 'IX', 'XI', 'XII'}
+ENGLISH_CAPS = {'OF', 'IN', 'ON', 'BY', 'NO', 'SO', 'US', 'UP', 'OK', 'OR', 'AS', 'AT',
+                'TO', 'IF', 'IS', 'IT', 'BE', 'HE', 'WE', 'AM', 'PM'}
+SCIENTIFIC_ACRONYMS = {'NF', 'UF', 'FO', 'PRO', 'BPM', 'CV', 'UV', 'PV', 'ICP', 'VOC',
+                       'PAN', 'PS', 'PI', 'PP', 'PC', 'PU', 'RO', 'MD', 'MBR', 'ED',
+                       'AEM', 'CEM', 'BPM', 'TOC', 'COD', 'BOD', 'SEM', 'TEM', 'XRD',
+                       'XPS', 'FTIR', 'NMR', 'HPLC', 'GC', 'MS', 'AFM', 'EDS', 'EDX'}
+CHEM_FALSE_POSITIVES = ROMAN_NUMERALS | ENGLISH_CAPS | SCIENTIFIC_ACRONYMS
 # A leading-dot decimal (`.27`) never follows a word character or closing
 # bracket in scientific prose: `migration.27` is sentence-final punctuation
 # plus a superscript citation, not the decimal 0.27. Freeze the number alone
@@ -26,6 +36,10 @@ def protected_spans(source):
         # Chinese `钒(V)` does not, so a lone parenthesized element symbol must
         # audit the same on both sides. Digits, sub/superscripts, charges or a
         # second element still mark real formulas.
+        # Roman numerals, all-caps function words and undressed membrane
+        # acronyms share the element-symbol alphabet but are not formulas.
+        if value in CHEM_FALSE_POSITIVES and not re.search(r'[\d₀-₉¹²³⁴⁵⁶⁷⁸⁹⁰⁺⁻+−]', value):
+            continue
         if re.search(r'[\d₀-₉¹²³⁴⁵⁶⁷⁸⁹⁰⁺⁻+−]', value) or len(re.findall(ELEMENT, value)) > 1:
             spans.append((m.start(), m.end()))
     spans += [(m.start(), m.end()) for m in NUM.finditer(source)]
@@ -61,12 +75,25 @@ def freeze(source):
 
 
 def restore(translation, frozen):
+    """Put protected text back. A token may repeat; it may not be invented or dropped.
+
+    Chinese clause order sometimes needs the same frozen quantity twice. That is
+    valid. A placeholder the source never froze, or a source token that does not
+    appear at least once while other placeholders remain, is still an error.
+
+    Text with no placeholders is left unchanged. Block-cache entries and supplied
+    revisions are already restored; a model reply that drops every placeholder is
+    rejected by the router before this function runs, then audited for content.
+    """
     counts = Counter(TOKEN.findall(translation))
-    if counts:
-        if set(counts) != set(frozen) or any(v != 1 for v in counts.values()):
-            raise ValueError('Missing, duplicate or unknown frozen placeholder')
-        for token, original in frozen.items():
-            translation = translation.replace(token, original)
+    if not counts:
+        return translation
+    missing = [token for token in frozen if counts[token] < 1]
+    unknown = [token for token in counts if token not in frozen]
+    if missing or unknown:
+        raise ValueError('Missing or unknown frozen placeholder')
+    for token, original in frozen.items():
+        translation = translation.replace(token, original)
     return translation
 
 
@@ -103,6 +130,25 @@ def _extend_charge(text, spans):
     return result
 
 
+_NUM_TOKEN = re.compile(
+    r'^[+-]?(?:\d+(?:[.,]\d+)*|\.\d+)(?:[eE][+-]?\d+)?(?:[×x]10(?:\^?[−-]?\d+)?)?%?$'
+    r'|^[⁰¹²³⁴⁵⁶⁷⁸⁹]+$')
+_UNIT_TOKEN = re.compile(
+    r'^(?:mol|mmol|μmol|µmol|nmol|mg|μg|µg|kg|g|mL|ml|μL|µL|L|nm|μm|µm|mm|cm|m|'
+    r'mV|V|mA|A|Pa|kPa|MPa|Hz|kHz|MHz|s|min|h|K|°C|eV|W)'
+    r'(?:[−-][1-9]|[⁻¹²³⁴⁵⁶⁷⁸⁹]+|\^[−-]?\d+)?$')
+
+
+def _numeric_or_unit(token):
+    """True when an audited token is a number or unit, not a chemical formula."""
+    if _NUM_TOKEN.fullmatch(token) or _UNIT_TOKEN.fullmatch(token):
+        return True
+    # Adjacent number+unit spans are audited as one key after whitespace removal.
+    return bool(re.fullmatch(
+        r'[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:mg|g|mL|ml|L|mM|M|%|nm|μm|µm|mm|cm|m|s|h|min|K|°C|eV|mV|V|Pa|kPa|MPa|Hz|mol|mmol)',
+        token))
+
+
 def audit(source, translation):
     """Return protected-token differences, accepting Unicode semantic equivalents."""
     # Letter-spaced display headings (`H I G H T S`, `G R A P H I C A L`) make
@@ -119,6 +165,11 @@ def audit(source, translation):
     expected = Counter(_audit_key(source[a:b]) for a, b in _extend_charge(source, protected_spans(source)))
     actual = Counter(_audit_key(translation[a:b]) for a, b in _extend_charge(translation, protected_spans(translation)))
     result = {'missing': list((expected - actual).elements()), 'added': list((actual - expected).elements())}
+    # "tripled" → "3倍" and "Fig. 1a and b" → "图 1a 和图 1b" change numeric
+    # counts without inventing chemistry. Callers record that as a warning.
+    if result['missing'] or result['added']:
+        if all(_numeric_or_unit(token) for token in result['missing'] + result['added']):
+            result['severity'] = 'warning'
     # Two adjacent frozen tokens joined without their original punctuation
     # re-scan as one larger token, e.g. `(SPI)` + `21` -> `(SPI)21`. The audit
     # failure is real, but the message must say what to do about it.

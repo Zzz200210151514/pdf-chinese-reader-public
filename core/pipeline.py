@@ -5,6 +5,7 @@ from copy import deepcopy
 import pymupdf as fitz
 from .pdf_reader import parse
 from .classifier import classify
+from .paragraphs import link_paragraphs
 from .layout import compile_layout,LayoutError
 from .rebuild import rebuild,legacy
 from .validator import validate
@@ -101,7 +102,9 @@ def prepare(source,work,config=None,extractor='local',mineru_cli=None,force=Fals
         if mineru_cli:command+=['--cli',str(mineru_cli)]
         with log.stage('mineru'):subprocess.run(command,check=True)
     elif extractor!='local':raise ValueError('Unknown extraction mode')
-    with log.stage('classify'):mapping=classify(inspection)
+    with log.stage('classify'):
+        mapping=classify(inspection)
+        link_paragraphs(mapping, work/'extraction' if extractor=='mineru' else None)
     mapping['source_path']=str(Path(source).resolve())
     mapping['source_sha256']=source_sha256
     mapping['workflow_version']='4.1'
@@ -161,9 +164,16 @@ def resolve_issue(work,issue_key,note,config=None):
                                  'ready_to_dispatch':gate['ready_to_dispatch'],
                                  'blocking_count':sum(i['severity']=='blocking' for i in gate['issues']),
                                  'review_required_count':sum(i['severity']=='review-required' for i in gate['issues'])})
-    jobs=plan(work,config,reviewed=True)
-    log.event('resolve','completed',issue_key=issue_key,jobs=len(jobs))
-    return {'resolved':issue_key,'note':note,'map_frozen':True,'jobs':len(jobs),
+    # Resolving one of N issues must exit cleanly. Freeze the plan only when
+    # nothing review-required remains; otherwise the caller still has work.
+    jobs=[]
+    frozen_now=False
+    if gate['ready_to_dispatch']:
+        jobs=plan(work,config,reviewed=True)
+        frozen_now=True
+    log.event('resolve','completed',issue_key=issue_key,jobs=len(jobs),map_frozen=frozen_now)
+    return {'resolved':issue_key,'note':note,'map_frozen':frozen_now,'jobs':len(jobs),
+            'ready_to_dispatch':gate['ready_to_dispatch'],
             'remaining_review':sum(1 for i in gate['issues'] if i['severity']=='review-required')}
 
 def translate(work,config=None,translations=None,font_dir=None):
@@ -221,7 +231,8 @@ def finish(source,work,output,font_dir,translations=None,config=None,reviewed=Fa
         # Explicit, newly supplied revisions take priority over a previous cache.
         router=make_router(config,work,log)
         if supplied is not None:
-            expected={b['id'] for b in mapping['blocks'] if b.get('translation_required',True)}
+            # Continuation boxes are covered by the anchor's logical translation.
+            expected={b['id'] for b in mapping['blocks'] if b.get('translation_required',True) and not b.get('translation_in')}
             if set(supplied)!=expected:raise ValueError('Translations do not cover the full reviewed source map')
             result=router.translate(mapping,supplied=supplied)
         else:result=router.translate(mapping)
@@ -232,8 +243,12 @@ def finish(source,work,output,font_dir,translations=None,config=None,reviewed=Fa
         titles=[b['translation'] for b in merged['blocks'] if b.get('type')=='title' and b.get('translation')]
         if titles:merged['title']=' '.join(titles)
         write(work/'merged.json',merged)
+        translation_warnings=[dict(r) for r in router.records if r.get('severity')=='warning' or r.get('status')=='warning']
     with log.stage('layout'):
         manifest=compile_layout(merged,fonts=resolve_fonts(fonts or mapping.get('fonts') or load_config(config).get('fonts'),font_dir))
+        if translation_warnings:
+            manifest.setdefault('warnings', [])
+            manifest['warnings']=[*manifest['warnings'], *translation_warnings]
         write(work/'layout.json',manifest)
     # The proven writer performs and saves preflight before touching the source.
     # Running the same fit calculation here again doubles this stage's work.

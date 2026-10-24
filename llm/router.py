@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import yaml
 from knowledge import Glossary
 from .adapters import RemoteAdapter, ProviderResponse
-from .freeze import freeze, restore, audit
+from .freeze import TOKEN, freeze, restore, audit
 
 INSTRUCTIONS = (Path(__file__).parent / 'prompts' / 'translate.txt').read_text(encoding='utf-8').strip()
 
@@ -87,12 +87,17 @@ class Router:
             raise ValueError('batch_size must be in [1,100]')
         for index, block in enumerate(blocks):
             kind, route = self._route(block)
+            # Continuation boxes of a logical paragraph are translated with the
+            # anchor. Placeholders and glossary rules apply to the merged text.
+            if block.get('translation_in'):
+                continue
             if kind in ('formula', 'reference', 'references', 'bibliography') or route.get('preserve') or not block.get('translation_required', True):
                 continue
-            if not isinstance(block.get('source_text'), str):
+            source_text = block.get('logical_source') or block.get('source_text')
+            if not isinstance(source_text, str):
                 raise ValueError('Translatable block requires source_text')
             domain = block.get('domain', route.get('domain', 'chemistry'))
-            text, frozen = freeze(block['source_text'])
+            text, frozen = freeze(source_text)
             assigned = {'id': block['id'], 'source_page': block.get('source_page'), 'type': kind, 'source_text': text, 'domain': domain}
             signature = json.dumps({'type': kind, 'route': route, 'domain': domain}, sort_keys=True)
             if not groups or groups[-1]['signature'] != signature or len(groups[-1]['blocks']) >= batch_size:
@@ -100,14 +105,18 @@ class Router:
             job = groups[-1]
             job['blocks'].append(assigned)
             job['_frozen'][block['id']] = frozen
-            job['_source'][block['id']] = block['source_text']
+            job['_source'][block['id']] = source_text
+            group_id = block.get('logical_paragraph_id')
+            same_group = {n['id'] for n in blocks if group_id and n.get('logical_paragraph_id') == group_id}
             job['_context'][block['id']] = [
                 {'id': n['id'], 'source_text': n.get('source_text', '')[:1000]}
-                for n in blocks[max(0, index-1):min(len(blocks), index+2)] if n['id'] != block['id']]
+                for n in blocks[max(0, index-1):min(len(blocks), index+2)]
+                if n['id'] != block['id'] and n['id'] not in same_group]
             for neighbor in blocks[max(0, index-1):min(len(blocks), index+2)]:
-                if neighbor['id'] != block['id'] and not any(n['id'] == neighbor['id'] for n in job['neighbor_context']):
+                if (neighbor['id'] != block['id'] and neighbor['id'] not in same_group
+                        and not any(n['id'] == neighbor['id'] for n in job['neighbor_context'])):
                     job['neighbor_context'].append({'id': neighbor['id'], 'source_text': neighbor.get('source_text', '')[:1000]})
-            for term in self.glossary.inspect(block['source_text'], domain):
+            for term in self.glossary.inspect(source_text, domain):
                 if term not in job['terms']:
                     job['terms'].append(term)
         for job in groups:
@@ -136,10 +145,25 @@ class Router:
             value = restore(value, job['_frozen'][identity])
             check = audit(job['_source'][identity], value)
             if check['missing'] or check['added']:
-                raise ValueError(f'Protected chemistry/numeric/unit content changed for {identity}')
+                if check.get('severity') == 'warning':
+                    self._record({'job_id': job.get('id'), 'block_ids': [identity], 'status': 'warning',
+                                  'severity': 'warning', 'check': 'numeric-unit-audit',
+                                  'missing': check['missing'], 'added': check['added'],
+                                  'provider': job.get('provider'), 'model': job.get('model'),
+                                  'timestamp_utc': datetime.now(timezone.utc).isoformat(),
+                                  'duration_seconds': 0, 'usage': None})
+                else:
+                    raise ValueError(f'Protected chemistry/numeric/unit content changed for {identity}')
             value = self.glossary.apply(job['_source'][identity], value, block['domain'])
-            if self.glossary.validate(job['_source'][identity], value, block['domain']):
+            term_issues = self.glossary.validate(job['_source'][identity], value, block['domain'])
+            if any(item.get('severity') != 'warning' for item in term_issues):
                 raise ValueError(f'Forbidden contextual term for {identity}')
+            if term_issues:
+                self._record({'job_id': job.get('id'), 'block_ids': [identity], 'status': 'warning',
+                              'severity': 'warning', 'check': 'forbidden-term',
+                              'issues': term_issues, 'provider': job.get('provider'), 'model': job.get('model'),
+                              'timestamp_utc': datetime.now(timezone.utc).isoformat(),
+                              'duration_seconds': 0, 'usage': None})
             validated[identity] = value
         return validated
 
@@ -285,7 +309,13 @@ class Router:
                         try:
                             if identity not in output:
                                 raise ValueError('Translation ID missing')
-                            valid.update(self._validate(self._subset(current, [identity]), {identity: output[identity]}))
+                            raw = output[identity]
+                            frozen = current['_frozen'][identity]
+                            # Fresh model output was given placeholders. A reply
+                            # that drops every one of them is not a cache reload.
+                            if isinstance(raw, str) and frozen and not TOKEN.search(raw):
+                                raise ValueError('Missing or unknown frozen placeholder')
+                            valid.update(self._validate(self._subset(current, [identity]), {identity: raw}))
                         except ValueError:
                             failed.append(identity)
                     self._store(job, valid)
