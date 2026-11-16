@@ -3,6 +3,7 @@ import json,re,html
 from pathlib import Path
 from collections import Counter
 import pymupdf as fitz
+from .classifier import is_background_watermark
 from .preservation import audit_document
 from .raster import protected_pixmap
 
@@ -116,7 +117,8 @@ def validate(source,output,manifest,mapping=None):
     if mapping:
         expected=[(p['source_page'],item) for p in mapping.get('pages',[]) for item in p.get('protected',[])]
         expected += [(item['source_page'],item) for item in mapping.get('blocks',[])
-                     if not item.get('translation_required',True) and 'source_page' in item and 'rect' in item]
+                     if not item.get('translation_required',True) and not is_background_watermark(item)
+                     and 'source_page' in item and 'rect' in item]
         actual={(p['source_page'],item['id']):item['rect'] for p in manifest['pages'] for item in p.get('protected',[])}
         missing=[{'page':pn,'id':item['id']} for pn,item in expected
                  if (pn,item['id']) not in actual or not fitz.Rect(actual[pn,item['id']]).contains(fitz.Rect(item['rect']))]

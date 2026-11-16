@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .classifier import adapted_body_size, intersects
+from .classifier import adapted_body_size, intersects, is_background_watermark
 from .paragraphs import link_paragraphs, load_mineru_items
 from .pdf_reader import stable_id
 
@@ -295,7 +295,8 @@ def fuse_mineru(mapping, extraction_dir):
             continue
         blob = _compact(item.get('text') or ' '.join(_captions(item)))
         hits = _hits([block for block in mapping['blocks']
-                      if block.get('source_page') == page_number and block['id'] not in claimed],
+                      if block.get('source_page') == page_number and block['id'] not in claimed
+                      and not is_background_watermark(block)],
                      box, kind, blob)
         if hits:
             hits.sort(key=lambda block: (block['rect'][1], block['rect'][0], block['id']))

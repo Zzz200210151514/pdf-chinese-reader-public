@@ -345,7 +345,7 @@ def merged_to_reader_manifest(merged, source_pdf, asset_dir):
                     })
                     continue
 
-                if btype == 'title':
+                if btype == 'title' or b.get('role') == 'background-watermark' or b.get('preservation_reason') == 'background-watermark':
                     continue
                 is_fallback = bool(b.get('auto_fallback')) or (
                     b.get('translation_required', True)

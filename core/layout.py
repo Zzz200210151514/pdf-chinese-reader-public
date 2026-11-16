@@ -5,7 +5,7 @@ from copy import deepcopy
 import html
 import re
 
-from .classifier import classify, clamp_body_font, column_groups, intersects, union
+from .classifier import classify, clamp_body_font, column_groups, intersects, is_background_watermark, union
 from .stacked_selectivity import is_stacked_script_fragment
 from .redaction import split_masks
 from .citations import (
@@ -225,6 +225,8 @@ def compile_layout(mapping, fonts=None, *, resilient=False):
             if b.get("absorbed"):
                 continue
             if not b.get("translation_required", True):
+                if is_background_watermark(b):
+                    continue
                 if not b.get("preservation_reason"):
                     if resilient:
                         b["preservation_reason"] = "auto-preserved-native"

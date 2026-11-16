@@ -253,6 +253,116 @@ class ResilientDeliveryTests(unittest.TestCase):
                 self.assertEqual(after['mineru']['ready'], bool(after['mineru']['cli_found']))
                 self.assertNotIn('sk-test-first-time-friend-0001', json.dumps(after, ensure_ascii=False))
 
+    def test_rotated_preproof_watermark_never_blocks_prose_or_becomes_figure(self):
+        from core.classifier import classify
+        from core.layout import compile_layout
+        from core.structure import preflight
+
+        def _blk(bid, text, bbox, size=10.5, dir_vec=(1.0, 0.0)):
+            return {
+                'id': bid,
+                'bbox': bbox,
+                'tight_bbox': bbox,
+                'text': text,
+                'lines': [{
+                    'bbox': bbox,
+                    'dir': list(dir_vec),
+                    'wmode': 0,
+                    'spans': [{'size': size, 'flags': 0, 'font': 'TimesNewRomanPSMT', 'text': text, 'bbox': bbox}],
+                }],
+            }
+
+        wm_box = [158.0, 225.0, 440.0, 507.0]
+        inspection = {
+            'sha256': 'c' * 64,
+            'pages': [
+                {
+                    'source_page': 1,
+                    'rect': [0.0, 0.0, 612.0, 792.0],
+                    'text': 'Title\nJournal Pre-proof\nBody prose one',
+                    'drawing_clusters': [],
+                    'drawing_rules': [],
+                    'tables': [],
+                    'blocks': [
+                        _blk('b1', 'Electrochemical acid production across proton-blocking anion-exchange membranes requires minimizing co-ion leakage.', [72.0, 260.0, 540.0, 275.0]),
+                        _blk('w1', 'Journal Pre-proof', wm_box, size=43.9, dir_vec=(0.707, -0.707)),
+                    ],
+                },
+                {
+                    'source_page': 2,
+                    'rect': [0.0, 0.0, 612.0, 792.0],
+                    'text': 'Journal Pre-proof\nBody prose two',
+                    'drawing_clusters': [],
+                    'drawing_rules': [],
+                    'tables': [],
+                    'blocks': [
+                        {'id': 'fig1', 'type': 1, 'bbox': [72.0, 300.0, 540.0, 521.0]},
+                        _blk('b2', 'Normalized co-ion diffusion coefficients remain correlated with hydrated membrane free volume fraction across samples.', [72.0, 240.0, 540.0, 255.0]),
+                        _blk('w2', 'Journal Pre-proof', wm_box, size=43.9, dir_vec=(0.707, -0.707)),
+                    ],
+                },
+            ],
+        }
+        mapping = classify(inspection)
+        mapping['layout_reviewed'] = True
+        by_text = {b['source_text']: b for b in mapping['blocks']}
+        self.assertEqual(by_text['Journal Pre-proof']['role'], 'background-watermark')
+        self.assertEqual(by_text['Journal Pre-proof']['preservation_reason'], 'background-watermark')
+        self.assertEqual(by_text['Journal Pre-proof']['type'], 'paragraph')
+        # Page-1 prose overlapping the watermark must stay translatable and produce 0 protected intersections.
+        for b in mapping['blocks']:
+            if b.get('role') != 'background-watermark' and 'membrane' in b['source_text'].lower():
+                self.assertTrue(b['translation_required'])
+                b['translation'] = '中文译文内容示例。'
+        pre = preflight(mapping, resilient=True)
+        self.assertTrue(pre['passed'])
+        self.assertFalse(any(i.get('check') == 'protected-intersection' for i in pre['issues']))
+        manifest = compile_layout(mapping, resilient=True)
+        self.assertEqual(manifest['fallback_records'], [])
+        for pg in manifest['pages']:
+            self.assertFalse(any(p['id'] in {'w1', 'w2'} for p in pg['protected']))
+
+    def test_single_column_superscript_split_and_caption_continuation_link_correctly(self):
+        from core.paragraphs import link_paragraphs
+
+        def _b(bid, text, rect, btype='paragraph', col='single'):
+            return {
+                'id': bid,
+                'source_page': 1,
+                'type': btype,
+                'column': col,
+                'translation_required': True,
+                'source_font_pt': 11.0,
+                'size': 11.0,
+                'rect': rect,
+                'source_text': text,
+            }
+
+        # Note: 'right' has y0 slightly lower (71.4 < 72.9) because of leading <sup>!
+        right = _b('r', '<sup>m,w</sup>, mol/kg) and hydration', [244.6, 71.4, 540.0, 86.2])
+        left = _b('l', 'fixed charge concentration (C<sub>A</sub>', [72.0, 72.9, 248.2, 88.8])
+        line2 = _b('l2', 'were quantified at 25 C.', [72.0, 94.6, 540.0, 108.0])
+        indent_new = _b('ind', 'Another indented paragraph starts here.', [108.0, 114.0, 540.0, 128.0])
+        cap_head = _b('ch', 'Figure 4. a) Diffusion coefficients, D<sub>c</sub>', [72.0, 529.2, 287.5, 544.2], btype='caption')
+        cap_r = _b('cr', '<sup>m</sup>, versus membrane water volume', [284.3, 528.8, 540.1, 542.5], btype='paragraph')
+        cap_l2 = _b('cl2', 'fraction across samples.', [72.0, 550.5, 323.3, 565.6], btype='paragraph')
+
+        mapping = {
+            'pages': [{'source_page': 1, 'rect': [0.0, 0.0, 612.0, 792.0]}],
+            'blocks': [right, left, line2, indent_new, cap_head, cap_r, cap_l2],
+        }
+        link_paragraphs(mapping)
+        # Left merged into right and line2 cleanly in visual order; indented paragraph stayed separate.
+        self.assertEqual(right.get('translation_in'), 'l')
+        self.assertEqual(line2.get('translation_in'), 'l')
+        self.assertTrue(left['logical_source'].startswith('fixed charge'))
+        self.assertIsNone(indent_new.get('translation_in'))
+        # Caption head absorbed both its superscript baseline tail and next caption line.
+        self.assertEqual(cap_r.get('translation_in'), 'ch')
+        self.assertEqual(cap_l2.get('translation_in'), 'ch')
+        self.assertEqual(cap_r.get('type'), 'caption')
+        self.assertEqual(cap_l2.get('type'), 'caption')
+
 
 if __name__ == '__main__':
     unittest.main()

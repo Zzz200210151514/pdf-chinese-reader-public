@@ -9,7 +9,7 @@ import hashlib
 import json
 import math
 import re
-from .classifier import reading_order, intersects, column_groups
+from .classifier import reading_order, intersects, column_groups, is_background_watermark
 
 
 def fingerprint(mapping):
@@ -94,7 +94,9 @@ def preflight(mapping, inspection=None, *, resilient=False):
             continue
         if not b.get('source_text', '').strip(): add('empty-source-text', b)
         natives = p.get('protected', []) + [{'id': a['id'], 'rect': a['rect']} for a in mapping['blocks']
-                                          if a['source_page'] == b['source_page'] and not a.get('translation_required', True)]
+                                          if a['source_page'] == b['source_page']
+                                          and not a.get('translation_required', True)
+                                          and not is_background_watermark(a)]
         for native in natives:
             # Font-metric bleed between text rows is tolerated; a figure or
             # drawing under a paragraph is real damage at any overlap.

@@ -25,6 +25,27 @@ MICRO_EQ_NUMBER = re.compile(r"^\(\d{1,3}\)[.,;:]?$")
 MICRO_NATIVE_CHARS = re.compile(r"^[A-Za-z0-9()\[\]{}+\-−·.,;:/α-ωΑ-Ω\x80-\x9f]+$")
 MICRO_STOPWORDS = {'a', 'an', 'the', 'we', 'it', 'is', 'in', 'on', 'of', 'to', 'and',
                    'or', 'as', 'at', 'by', 'for', 'from', 'with', 'this', 'that', 'no'}
+WATERMARK_TEXT = re.compile(
+    r"\b(?:pre-?proof|preprint|accepted\s+manuscript|uncorrected\s+proof|confidential|draft|do\s+not\s+distribute)\b",
+    re.I,
+)
+
+
+def is_background_watermark(block):
+    """True when ``block`` is classified as a page background watermark overlay."""
+    return (
+        block.get("role") == "background-watermark"
+        or block.get("preservation_reason") == "background-watermark"
+    )
+
+
+def _is_rotated_lines(lines):
+    return any(abs(l.get("dir", [1, 0])[0] - 1) > 0.001 or abs(l.get("dir", [1, 0])[1]) > 0.001 for l in (lines or []))
+
+
+def _watermark_key(box, text):
+    norm = re.sub(r"\s+", " ", text or "").strip().lower()
+    return (norm, round(box[0] / 4), round(box[1] / 4), round(box[2] / 4), round(box[3] / 4))
 
 
 def native_micro_fragment(text, rect):
@@ -258,10 +279,45 @@ def column_groups(boxes, bounds):
     left = [b for b in boxes if b[2] <= mid+width*.035 and width*.18 <= b[2]-b[0] < width*.57]
     right = [b for b in boxes if b[0] >= mid-width*.035 and width*.18 <= b[2]-b[0] < width*.57]
     split = bool(left and right and min(b[0] for b in right)-max(b[2] for b in left) >= width*.005)
+    if split:
+        full_wide = [b for b in boxes if b[2] - b[0] >= width * 0.60]
+        left_rows = len({round(b[1] / 18) for b in left})
+        right_rows = len({round(b[1] / 18) for b in right})
+        if (len(full_wide) >= 3 and left_rows < 2 and right_rows < 2) or (
+            len(full_wide) >= 5 and len(full_wide) >= (len(left) + len(right)) * 2
+        ):
+            split = False
     if not split:
         return ["single"]*len(boxes)
     gutter = (max(b[2] for b in left)+min(b[0] for b in right))/2
     return ["left" if b[2] <= gutter else "right" if b[0] >= gutter else "full" for b in boxes]
+
+
+def _order_visual_lines(items):
+    """Order blocks top-to-bottom, keeping superscript-split fragments on one line left-to-right."""
+    if len(items) <= 1:
+        return list(items)
+    ordered = sorted(items, key=lambda i: (i["rect"][1], i["rect"][0], i["id"]))
+    rows = []
+    for item in ordered:
+        r = item["rect"]
+        h = max(1.0, r[3] - r[1])
+        cy = (r[1] + r[3]) / 2
+        if rows:
+            ref = rows[-1][0]["rect"]
+            ref_h = max(1.0, ref[3] - ref[1])
+            ref_cy = (ref[1] + ref[3]) / 2
+            v_overlap = min(ref[3], r[3]) - max(ref[1], r[1])
+            if v_overlap >= 0.45 * min(h, ref_h) and abs(cy - ref_cy) <= max(h, ref_h) * 0.45:
+                rows[-1].append(item)
+                continue
+        rows.append([item])
+    out = []
+    for row in rows:
+        if len(row) > 1:
+            row.sort(key=lambda i: (i["rect"][0], i["rect"][1], i["id"]))
+        out.extend(row)
+    return out
 
 
 def reading_order(items, bounds):
@@ -272,30 +328,49 @@ def reading_order(items, bounds):
     # Unclaimed leftovers sit between the claimed neighbours by vertical position.
     if any("mineru_reading_index" in item for item in items):
         claimed = [item for item in items if "mineru_reading_index" in item]
-        def mineru_key(item):
+        slots = {}
+        for item in items:
             if "mineru_reading_index" in item:
-                return (item["mineru_reading_index"], 0, item["id"])
-            y = item["rect"][1]
-            before = [c["mineru_reading_index"] for c in claimed if c["rect"][1] <= y]
-            after = [c["mineru_reading_index"] for c in claimed if c["rect"][1] > y]
-            if before and after:
-                slot = (max(before) + min(after)) / 2
-            elif before:
-                slot = max(before) + 0.5
-            elif after:
-                slot = min(after) - 0.5
+                slots[item["id"]] = (item["mineru_reading_index"], 0)
             else:
-                slot = 0
-            return (slot, 1, item["id"])
-        return sorted(items, key=mineru_key)
+                y = item["rect"][1]
+                before = [c["mineru_reading_index"] for c in claimed if c["rect"][1] <= y]
+                after = [c["mineru_reading_index"] for c in claimed if c["rect"][1] > y]
+                if before and after:
+                    slot = (max(before) + min(after)) / 2
+                elif before:
+                    slot = max(before) + 0.5
+                elif after:
+                    slot = min(after) - 0.5
+                else:
+                    slot = 0
+                slots[item["id"]] = (slot, 1)
+        by_slot = {}
+        for item in items:
+            by_slot.setdefault(slots[item["id"]], []).append(item)
+        out = []
+        for skey in sorted(by_slot):
+            bucket = by_slot[skey]
+            if skey[1] == 1 and len(bucket) > 1:
+                out.extend(_order_visual_lines(bucket))
+            elif len(bucket) > 1:
+                out.extend(sorted(bucket, key=lambda i: (i["id"])))
+            else:
+                out.extend(bucket)
+        return out
     anchors = sorted((i for i in items if i["column"] == "full"), key=lambda i: (i["rect"][1], i["rect"][0], i["id"]))
-    def key(item):
+    col_rank = {"left": 0, "single": 0, "right": 1, "full": 2}
+    buckets = {}
+    for item in items:
         b = item["rect"]
         band = sum(a["rect"][3] <= b[1] for a in anchors)
         # Full-width anchors end the preceding band, so column text above them
         # is read first and text below them starts a new column band.
-        return (band, {"left": 0, "single": 0, "right": 1, "full": 2}[item["column"]], b[1], b[0], item["id"])
-    return sorted(items, key=key)
+        buckets.setdefault((band, col_rank[item["column"]]), []).append(item)
+    out = []
+    for bkey in sorted(buckets):
+        out.extend(_order_visual_lines(buckets[bkey]))
+    return out
 
 
 def _formula(text):
@@ -452,6 +527,15 @@ def classify(inspection):
                         if l['bbox'][3] < page['rect'][1]+h*.105 or l['bbox'][1] > page['rect'][3]-h*.08})
         running.update(page_running)
     repeated = {k for k, n in running.items() if k != "#" and n >= 2 and n >= len(pages)*.5}
+    watermark_running = Counter()
+    for page in pages:
+        page_wm = {
+            _watermark_key(r["bbox"], r["text"])
+            for r in records
+            if r["page"] == page["source_page"] and r["text"] and _is_rotated_lines(r.get("lines"))
+        }
+        watermark_running.update(page_wm)
+    repeated_watermarks = {k for k, n in watermark_running.items() if n >= 2 and k[0]}
     in_refs = False
     seen_ref_head = False
     refs_by_number = {}
@@ -495,11 +579,18 @@ def classify(inspection):
             closing=[r[1] for r in page.get('drawing_rules',[]) if abs(r[0]-table[0])<3 and abs(r[2]-table[2])<3
                      and 0<r[1]-table[3]<200]
             if closing:table[3]=min(closing)
-        prose = [r.get("tight_bbox", r["bbox"]) for r in source if len(re.findall(r"[A-Za-z]{4,}", r["text"])) >= 4]
+        prose = [
+            r.get("tight_bbox", r["bbox"]) for r in source
+            if len(re.findall(r"[A-Za-z]{4,}", r["text"])) >= 4 and not _is_rotated_lines(r.get("lines"))
+        ]
         long_prose = [r.get("tight_bbox", r["bbox"]) for r in source
-                      if len(r["text"]) >= 100 and len(re.findall(r"[A-Za-z]+", r["text"])) >= 12
+                      if ((len(r["text"]) >= 100 and len(re.findall(r"[A-Za-z]+", r["text"])) >= 12)
+                          or ((r["bbox"][2] - r["bbox"][0]) >= (bounds[2] - bounds[0]) * 0.45
+                              and len(r["text"]) >= 60 and len(re.findall(r"[A-Za-z]{2,}", r["text"])) >= 8))
                       and re.search(r"\b[a-z]{4,}\b", r["text"])
+                      and not _is_rotated_lines(r.get("lines"))
                       and not re.match(r"^(?:Fig(?:ure)?\.?|Table)\s*\d+", r["text"], re.I)]
+        caption_starts = [r.get("tight_bbox", r["bbox"]) for r in source if CAPTION.match(r["text"])]
         abstract_tops = [r["bbox"][1] for r in source if any(normalize_heading(block_text({"lines": [l]})) == "abstract" for l in r.get("lines", []))
                          or re.match(r"^abstract\b", r["text"], re.I)]
         metadata_limit = min(abstract_tops) if abstract_tops else bounds[1]+(bounds[3]-bounds[1])*.3
@@ -644,6 +735,7 @@ def classify(inspection):
                                                or (max(other["bbox"][1]-box[3], box[1]-other["bbox"][3], 0) <= body*1.5
                                                    and min(other["bbox"][2], box[2]) > max(other["bbox"][0], box[0]))))
                 displayed_math = (not re.search(r"\b[a-z]{4,}\b", text)
+                                  and not re.search(r'\b(?:then|where|thus|hence|with|from|given|using|is|are|was|were|be|the|and|or)\b', text, re.I)
                                   and not re.search(r'\b(?:eq(?:uation|n)?)\.?\s*\d+\s*:?\s*$', text, re.I)
                                   and (bool(MATH.search(text)) or len(text) <= 80 and any(contains(z, box) for z in math_zones)))
                 centers = [(visible_line_bbox(l, box)[1]+visible_line_bbox(l, box)[3])/2 for l in lines]
@@ -721,21 +813,38 @@ def classify(inspection):
                             kind = "table"
                             reason = "native-table"
                             break
+                rotated = _is_rotated_lines(lines)
+                overlaps_prose = [p for p in prose if p != r.get("tight_bbox", r["bbox"]) and intersects(box, p)]
+                is_bg_watermark = bool(
+                    rotated
+                    and not CAPTION.match(text)
+                    and len(text) <= 120
+                    and (
+                        (size >= max(body * 1.8, 18.0) and (overlaps_prose or WATERMARK_TEXT.search(text)))
+                        or (_watermark_key(box, text) in repeated_watermarks and overlaps_prose)
+                    )
+                )
                 narrative_mention = bool(re.match(r"^(?:Fig(?:ure)?\.?|Table)\s*\d+\s+[A-Za-z]", text, re.I))
                 prose_sentence = len(re.findall(r"[A-Za-z]+", text)) >= 6 and bool(re.search(r"[.!?]\s*$", text))
                 # A continuation line of running prose (`...respectively, in
                 # solutions at pH < 3`) is not a plot label, even close to a
                 # figure: several ordinary lowercase words plus clause
                 # punctuation are prose evidence no axis label produces.
-                prose_like = len(re.findall(r"[a-z]{4,}", text)) >= 2 and bool(re.search(r"[,;]", text))
-                if (kind in {"paragraph", "formula"} and not caption and not prose_like and any(contains(z, box) for z in label_zones)
+                prose_like = (
+                    (len(re.findall(r"[a-z]{4,}", text)) >= 2 and bool(re.search(r"[,;]", text)))
+                    or (len(re.findall(r"[a-z]{4,}", text)) >= 1 and bool(re.search(r"[,;]", text))
+                        and any(cs[1] - 2 <= box[1] <= cs[3] + body * 5 and abs(box[0] - cs[0]) <= body * 2.5 for cs in caption_starts))
+                )
+                if is_bg_watermark:
+                    kind = "paragraph"
+                elif (kind in {"paragraph", "formula"} and not caption and not prose_like and any(contains(z, box) for z in label_zones)
                         and (len(text) <= 100 or not re.search(r"[a-z]{3,}", text))
                         and not narrative_mention and not prose_sentence and not inline_parents):
                     kind = "figure"
                 elif (kind == "paragraph" and len(text) <= 80 and not inline_parents
                       and (not re.search(r"\b[a-z]{4,}\b", text)
                            or any(intersects(tuple(round(v, 1) for v in b), tuple(round(v, 1) for v in box)) for b in named_absorbed))
-                      and not re.search(r'\b(?:then|where|thus|hence|with|from|given|using|is|are|was|were|be|the)\b',text,re.I)
+                      and not re.search(r'\b(?:then|where|thus|hence|with|from|given|using|is|are|was|were|be|the|and|or)\b',text,re.I)
                       and not (text.upper()==text and len(re.findall(r'[A-Z]',text))>=6)
                       and any(contains(z, box) for z in math_zones)):
                     kind = "formula"
@@ -758,13 +867,12 @@ def classify(inspection):
                 if normalize_heading(text).replace(" ", "") == "articleinfo":
                     entry["role"] = "metadata"
                     kind = "header"
-                rotated = any(abs(l.get("dir", [1, 0])[0]-1) > .001 or abs(l.get("dir", [1, 0])[1]) > .001 for l in lines)
                 # A numbered-equation zone encloses the equation AND its variable
                 # definitions (`where Jw is the water flux...`). Those definition
                 # lines are prose: keep them translatable unless the block is
                 # equation-shaped itself (math operator, bare number label) or
                 # carries no prose words at all.
-                if any(contains(z,box) for z in equation_zones):
+                if not is_bg_watermark and any(contains(z,box) for z in equation_zones):
                     if _formula(text) or not re.search(r"[A-Za-z]{4,}", text):
                         kind='formula';inline_parents=[]
                 if (pn==pages[0]['source_page'] and 'ACCESS' in text
@@ -773,24 +881,31 @@ def classify(inspection):
                 reason = None
                 if kind in {"formula", "table", "figure", "header", "footer"}:
                     reason = "native-"+kind
-                overlaps_prose = [p for p in prose if p != r.get("tight_bbox", r["bbox"]) and intersects(box, p)]
                 # A threshold value (`≥99.0%`) is a unit expression; keep it
                 # native so the original glyphs survive.
-                if UNIT.fullmatch(re.sub(r"^[≥≤><]\s*", "", text)) and not overlaps_prose:
-                    reason = "native-unit"
-                if overlaps_prose and len(text) < 25 and kind == "paragraph":
-                    entry["role"] = "inline-fragment"
-                    entry["paragraph_start"] = False
-                    entry["inline_fragment_of"] = [other["id"] for other in source if other.get("tight_bbox", other["bbox"]) in overlaps_prose]
-                    issues.append({"page": pn, "id": ident, "check": "inline-fragment-placement",
-                                   "action": "Review fragment position against parent prose; preserve scientific notation in translation."})
-                if inline_parents and kind in {"paragraph", "formula"}:
+                if is_bg_watermark:
                     kind = "paragraph"
-                    reason = None
-                    entry.update(role="inline-fragment", paragraph_start=False, inline_fragment_of=sorted(set(inline_parents)))
-                if rotated:
-                    reason = "rotated-text"
-                    if kind == 'title':kind = 'header'
+                    reason = "background-watermark"
+                    inline_parents = []
+                    entry["role"] = "background-watermark"
+                    entry["paragraph_start"] = False
+                    entry.pop("inline_fragment_of", None)
+                else:
+                    if UNIT.fullmatch(re.sub(r"^[≥≤><]\s*", "", text)) and not overlaps_prose:
+                        reason = "native-unit"
+                    if overlaps_prose and len(text) < 25 and kind == "paragraph":
+                        entry["role"] = "inline-fragment"
+                        entry["paragraph_start"] = False
+                        entry["inline_fragment_of"] = [other["id"] for other in source if other.get("tight_bbox", other["bbox"]) in overlaps_prose]
+                        issues.append({"page": pn, "id": ident, "check": "inline-fragment-placement",
+                                       "action": "Review fragment position against parent prose; preserve scientific notation in translation."})
+                    if inline_parents and kind in {"paragraph", "formula"}:
+                        kind = "paragraph"
+                        reason = None
+                        entry.update(role="inline-fragment", paragraph_start=False, inline_fragment_of=sorted(set(inline_parents)))
+                    if rotated:
+                        reason = "rotated-text"
+                        if kind == 'title':kind = 'header'
                 if text.strip() in {'■','●','•','▪','◼','◆'}:
                     kind='figure';reason='native-decorative-marker'
                 # Author and publication metadata remains original, with its role
@@ -922,7 +1037,7 @@ def classify(inspection):
             # Floating figures/captions may interrupt a bibliography and then
             # numbering resumes. Do not append a caption to the preceding ref.
             caption_candidate=bool(CAPTION.match(text))
-            if in_refs and entry["type"] not in {"header", "footer", "figure", "caption"} and not caption_candidate and entry.get("preservation_reason") != "rotated-text":
+            if in_refs and entry["type"] not in {"header", "footer", "figure", "caption"} and not caption_candidate and entry.get("preservation_reason") not in {"rotated-text", "background-watermark"}:
                 starts = list(re.finditer(r"(?m)^[ \t]*(?:\[(\d{1,3})\]|\((\d{1,3})\)|(\d{1,3})\.)(?:[ \t]+|$)", text))
                 accepted = []
                 for match in starts:

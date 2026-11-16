@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from pathlib import Path
 
-from .classifier import adapted_body_size, clamp_body_font, intersects, union
+from .classifier import _order_visual_lines, adapted_body_size, clamp_body_font, intersects, union
 from .stacked_selectivity import is_stacked_script_fragment
 
 
@@ -31,7 +32,23 @@ def plain_text(value):
 
 
 def _compact(value):
-    return re.sub(r'\s+', '', plain_text(value)).lower()
+    return re.sub(r'\s+', '', unicodedata.normalize('NFKC', plain_text(value))).lower()
+
+
+_TEX_GREEK = (
+    (r'\\phi\b', 'φ'), (r'\\varphi\b', 'φ'), (r'\\rho\b', 'ρ'), (r'\\kappa\b', 'κ'),
+    (r'\\lambda\b', 'λ'), (r'\\alpha\b', 'α'), (r'\\beta\b', 'β'), (r'\\gamma\b', 'γ'),
+    (r'\\delta\b', 'δ'), (r'\\eta\b', 'η'), (r'\\xi\b', 'ξ'), (r'\\sigma\b', 'σ'),
+    (r'\\mu\b', 'μ'), (r'\\varepsilon\b', 'ε'), (r'\\epsilon\b', 'ε'),
+)
+
+
+def _mineru_compact(value):
+    text = unicodedata.normalize('NFKC', plain_text(value))
+    for pat, repl in _TEX_GREEK:
+        text = re.sub(pat, repl, text, flags=re.I)
+    text = re.sub(r'[\$\\{}\^_]+', '', text)
+    return re.sub(r'\s+', '', text).lower()
 
 
 def _is_heading_text(text):
@@ -64,11 +81,13 @@ def _open_sentence(text):
     return bool(plain) and not _SENTENCE_END.search(plain)
 
 
-def _continues_lexically(nxt):
+def _continues_lexically(nxt, same_line=False):
     plain = plain_text(nxt.get('source_text', ''))
     if not plain:
         return False
     if nxt.get('role') == 'inline-fragment':
+        return True
+    if same_line:
         return True
     if re.match(r'^\([A-Za-z0-9+\-]{1,4}\)\s+[a-z]', plain):
         return True
@@ -88,48 +107,69 @@ def _column(rect, bounds):
     return 'full'
 
 
-def continues(prev, nxt, page_bounds):
+def continues(prev, nxt, page_bounds, row_left=None):
     """True when ``nxt`` is the geometric tail of an unfinished sentence."""
     if not prose_member(prev) or not prose_member(nxt):
         return False
-    if not _open_sentence(prev.get('source_text', '')) or not _continues_lexically(nxt):
+    if not _open_sentence(prev.get('source_text', '')):
         return False
-    if prev.get('type') != nxt.get('type'):
+    prev_type, nxt_type = prev.get('type'), nxt.get('type')
+    caption_cont = (prev_type == 'caption' and nxt_type == 'paragraph')
+    if prev_type != nxt_type and not caption_cont:
         return False
     ps = float(prev.get('source_font_pt') or prev.get('size') or 9)
     ns = float(nxt.get('source_font_pt') or nxt.get('size') or 9)
     if abs(ps - ns) > 1.5:
         return False
+    prev_left = prev['rect'][0] if row_left is None else row_left
     bounds = page_bounds.get(prev['source_page'])
+    same_baseline = (
+        prev['source_page'] == nxt['source_page']
+        and abs((prev['rect'][1] + prev['rect'][3]) / 2 - (nxt['rect'][1] + nxt['rect'][3]) / 2) <= max(ps, ns) * 0.65
+    )
+    if not _continues_lexically(nxt, same_line=same_baseline):
+        return False
     if prev['source_page'] == nxt['source_page'] and intersects(prev['rect'], nxt['rect']):
-        if prev.get('type') == 'caption' and nxt.get('type') == 'caption' and abs(prev['rect'][0] - nxt['rect'][0]) <= 4:
+        if caption_cont or (prev_type == 'caption' and nxt_type == 'caption' and (same_baseline or abs(prev_left - nxt['rect'][0]) <= 4)):
             return True
         if nxt.get('role') == 'inline-fragment' or prev.get('role') == 'inline-fragment':
             return True
         if bounds:
             pc, nc = _column(prev['rect'], bounds), _column(nxt['rect'], bounds)
-            if (pc == nc and prev['rect'][1] <= nxt['rect'][1]
+            single_col = (prev.get('column') == 'single' and nxt.get('column') == 'single')
+            if ((pc == nc or single_col or same_baseline) and prev['rect'][1] <= nxt['rect'][1] + ps * 0.6
                     and prev['rect'][3] - nxt['rect'][1] <= max(ps, ns) * 2.2
-                    and abs(prev['rect'][0] - nxt['rect'][0]) <= ps * 4):
+                    and abs(prev_left - nxt['rect'][0]) <= ps * 4
+                    and nxt['rect'][0] - prev_left <= ps * 1.2):
+                return True
+            if same_baseline and nxt['rect'][0] >= prev['rect'][0] - 2:
                 return True
         return False
     if not bounds:
         return False
     if prev['source_page'] == nxt['source_page']:
         pc, nc = _column(prev['rect'], bounds), _column(nxt['rect'], bounds)
+        single_col = (prev.get('column') == 'single' and nxt.get('column') == 'single')
         gap_y = nxt['rect'][1] - prev['rect'][3]
         gap_x = nxt['rect'][0] - prev['rect'][2]
-        same_baseline = abs((prev['rect'][1] + prev['rect'][3]) / 2 - (nxt['rect'][1] + nxt['rect'][3]) / 2) <= max(ps, ns)
-        if pc == nc and same_baseline and -2 <= gap_x <= ps * 8:
+        same_col = (
+            pc == nc
+            or single_col
+            or (same_baseline and (pc == 'full' or nc == 'full') and -ps * 0.6 <= gap_x <= max(ps * 2.0, 14))
+        )
+        if same_col and same_baseline and -ps * 0.6 <= gap_x <= ps * 8:
             return True
-        if (pc == nc and (pc != 'full' or prev.get('type') == 'caption')
-                and -12 <= gap_y <= max(ps * 0.85, 8) and abs(prev['rect'][0] - nxt['rect'][0]) <= ps * 4):
+        # A new paragraph first-line indent to the right ends the prior paragraph.
+        if nxt['rect'][0] - prev_left > ps * 1.2:
+            return False
+        if (same_col and -12 <= gap_y <= max(ps * 1.15, 10)
+                and abs(prev_left - nxt['rect'][0]) <= ps * 4):
             return True
         height = bounds[3] - bounds[1]
         if pc == 'left' and nc == 'right' and prev['rect'][3] > bounds[1] + height * 0.55 and (nxt['rect'][1] < bounds[1] + height * 0.72 or abs(nxt['rect'][1] - prev['rect'][1]) <= ps * 2):
             return True
         return False
-    if nxt['source_page'] != prev['source_page'] + 1:
+    if caption_cont or nxt['source_page'] != prev['source_page'] + 1:
         return False
     nxt_bounds = page_bounds.get(nxt['source_page'])
     if not nxt_bounds:
@@ -168,6 +208,9 @@ def _link(members):
     sources = [float(b.get('source_font_pt') or b.get('size') or 9) for b in members]
     if members[0].get('type') == 'caption':
         size = min(float(b.get('size') or 8) for b in members)
+        for b in members[1:]:
+            if b.get('type') == 'paragraph':
+                b['type'] = 'caption'
     else:
         size = clamp_body_font(adapted_body_size(min(sources)), members[0])
     leading = float(members[0].get('leading') or 1.17)
@@ -256,20 +299,33 @@ def _mineru_groups(blocks, items, pages):
     for item in text_items:
         if item.get('type') in {'image', 'table', 'equation', 'header', 'footer', 'page_number', 'page_footnote'}:
             continue
-        blob = _compact(item.get('text', ''))
+        blob = _mineru_compact(item.get('text', ''))
         if not blob:
             continue
         bbox, page = item.get('bbox'), item.get('page_idx')
         hits = []
         if isinstance(bbox, list) and len(bbox) == 4 and isinstance(page, int) and page + 1 in bounds:
             box = _denorm(bbox, bounds[page + 1])
+            geo_candidates = []
             for block in blocks:
                 if block['id'] in claimed or block.get('source_page') != page + 1 or not prose_member(block):
                     continue
                 if _center_in(block['rect'], box) or _overlap_frac(block['rect'], box) >= 0.45:
-                    piece = _compact(block.get('source_text', ''))
+                    geo_candidates.append(block)
+                    piece = _mineru_compact(block.get('source_text', ''))
                     if piece and piece in blob:
                         hits.append(block)
+            if hits and len(geo_candidates) > len(hits):
+                hit_ids = {b['id'] for b in hits}
+                min_y = min(b['rect'][1] for b in hits) - 2.0
+                max_y = max(b['rect'][3] for b in hits) + 2.0
+                ref_pt = float(hits[0].get('source_font_pt') or hits[0].get('size') or 9)
+                for cand in geo_candidates:
+                    if cand['id'] in hit_ids:
+                        continue
+                    cand_pt = float(cand.get('source_font_pt') or cand.get('size') or 9)
+                    if min_y <= cand['rect'][1] and cand['rect'][3] <= max_y and abs(cand_pt - ref_pt) <= 1.5:
+                        hits.append(cand)
         else:
             # Markdown-only extraction: consume the next prose blocks whose
             # concatenation is a prefix of this paragraph.
@@ -277,7 +333,7 @@ def _mineru_groups(blocks, items, pages):
             for block in blocks:
                 if block['id'] in claimed or not prose_member(block):
                     continue
-                piece = _compact(block.get('source_text', ''))
+                piece = _mineru_compact(block.get('source_text', ''))
                 if not piece or not blob.startswith(acc + piece):
                     if hits:
                         break
@@ -289,7 +345,10 @@ def _mineru_groups(blocks, items, pages):
             if acc and len(acc) < len(blob) * 0.8:
                 hits = []
         if len(hits) >= 2:
-            hits.sort(key=lambda b: (b.get('source_page', 0), b['rect'][1], b['rect'][0], b['id']))
+            by_page = {}
+            for h in hits:
+                by_page.setdefault(h.get('source_page', 0), []).append(h)
+            hits = [h for pg in sorted(by_page) for h in _order_visual_lines(by_page[pg])]
             groups.append(hits)
             claimed.update(b['id'] for b in hits)
     return groups
@@ -333,14 +392,34 @@ def link_paragraphs(mapping, extraction_dir=None):
             _link(list(cap_current))
         cap_current.clear()
 
+    def _row_left(seq):
+        if not seq:
+            return None
+        last = seq[-1]
+        ref_cy = (last['rect'][1] + last['rect'][3]) / 2
+        ref_h = max(last['rect'][3] - last['rect'][1], float(last.get('source_font_pt') or last.get('size') or 9))
+        left = last['rect'][0]
+        for prev_b in reversed(seq[:-1]):
+            if prev_b.get('source_page') != last.get('source_page'):
+                break
+            cy = (prev_b['rect'][1] + prev_b['rect'][3]) / 2
+            if abs(cy - ref_cy) <= ref_h * 0.65:
+                left = min(left, prev_b['rect'][0])
+            else:
+                break
+        return left
+
     for block in blocks:
         if block['id'] in assigned:
             flush()
             flush_cap()
             continue
         if block.get('type') == 'caption' and prose_member(block):
-            if cap_current and not continues(cap_current[-1], block, page_bounds):
+            if cap_current and not continues(cap_current[-1], block, page_bounds, row_left=_row_left(cap_current)):
                 flush_cap()
+            cap_current.append(block)
+            continue
+        if cap_current and prose_member(block) and continues(cap_current[-1], block, page_bounds, row_left=_row_left(cap_current)):
             cap_current.append(block)
             continue
         flush_cap()
@@ -355,7 +434,7 @@ def link_paragraphs(mapping, extraction_dir=None):
                 and (re.match(r'^(?:abbreviations|footnotes?|notes?)\s*:|^(?:fig(?:ure)?\.?|table)\s*\d+\b', plain_text(block.get('source_text', '')), re.I)
                      or (float(block.get('source_font_pt') or 9) <= 7.5 and float(current[-1].get('source_font_pt') or 9) >= 8.5))):
             continue
-        if current and not continues(current[-1], block, page_bounds):
+        if current and not continues(current[-1], block, page_bounds, row_left=_row_left(current)):
             flush()
         current.append(block)
     flush()
