@@ -363,6 +363,50 @@ class ResilientDeliveryTests(unittest.TestCase):
         self.assertEqual(cap_r.get('type'), 'caption')
         self.assertEqual(cap_l2.get('type'), 'caption')
 
+    def test_contiguous_logical_paragraph_lines_merge_into_uniform_box(self):
+        from core.layout import compile_layout
+
+        mapping = {
+            'layout_reviewed': True,
+            'source_sha256': 'd' * 64,
+            'references': [],
+            'targets': {},
+            'pages': [{'source_page': 1, 'rect': [0.0, 0.0, 612.0, 792.0], 'protected': []}],
+            'blocks': [
+                {
+                    'id': 'p1', 'source_page': 1, 'type': 'paragraph', 'column': 'single',
+                    'translation_required': True, 'rect': [108.0, 100.0, 540.0, 114.0],
+                    'size': 9.5, 'source_font_pt': 11.0, 'leading': 1.17, 'min_scale': 0.85,
+                    'source_text': 'First indented line of the logical paragraph',
+                    'logical_paragraph_id': 'lp-p1',
+                    'translation': '第一行缩进的逻辑段落内容将会先按段合并，随后在整栏全宽范围内均匀自动换行排版。',
+                    'logical_source': 'First indented line of the logical paragraph continues smoothly on lines two and three.',
+                },
+                {
+                    'id': 'p2', 'source_page': 1, 'type': 'paragraph', 'column': 'single',
+                    'translation_required': True, 'rect': [72.0, 121.0, 540.0, 135.0],
+                    'size': 9.5, 'source_font_pt': 11.0, 'leading': 1.17, 'min_scale': 0.85,
+                    'source_text': 'continues smoothly on lines',
+                    'logical_paragraph_id': 'lp-p1', 'translation_in': 'p1', 'join_previous': True,
+                },
+                {
+                    'id': 'p3', 'source_page': 1, 'type': 'paragraph', 'column': 'single',
+                    'translation_required': True, 'rect': [72.0, 142.0, 260.0, 156.0],
+                    'size': 9.5, 'source_font_pt': 11.0, 'leading': 1.17, 'min_scale': 0.85,
+                    'source_text': 'two and three.',
+                    'logical_paragraph_id': 'lp-p1', 'translation_in': 'p1', 'join_previous': True,
+                },
+            ],
+        }
+        manifest = compile_layout(mapping, resilient=True)
+        regions = manifest['pages'][0]['regions']
+        self.assertEqual(len(regions), 1)
+        self.assertEqual(regions[0]['rect'][:3], [72.0, 100.0, 540.0])
+        self.assertGreaterEqual(regions[0]['rect'][3], 155.0)
+        self.assertTrue(regions[0].get('text_indent'))
+        self.assertNotIn('<br/>', regions[0]['html'])
+        self.assertEqual(len(manifest['pages'][0]['redactions_original']), 3)
+
 
 if __name__ == '__main__':
     unittest.main()

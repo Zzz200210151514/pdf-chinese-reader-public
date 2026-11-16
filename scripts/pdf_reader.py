@@ -129,7 +129,8 @@ def content(item, fonts=None):
     if fonts:
         text,missing=fonts.render(text,item.get('bold',False))
         if missing:raise ValueError('Font glyphs missing: '+''.join(missing))
-    return f'<div style="font-size:{float(item.get("size",9.35))}pt;line-height:{float(item.get("leading",1.35))};font-weight:{"bold" if item.get("bold") else "normal"}">{text}</div>'
+    indent = 'text-indent:2em;' if item.get("text_indent") else ''
+    return f'<div style="font-size:{float(item.get("size",9.35))}pt;line-height:{float(item.get("leading",1.35))};font-weight:{"bold" if item.get("bold") else "normal"};{indent}">{text}</div>'
 
 def fit_only(item, bounds, fonts, css, archive, scale_low=None):
     """Use insert_htmlbox's exact fit algorithm without writing a throwaway PDF."""

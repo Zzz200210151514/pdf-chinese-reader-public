@@ -303,6 +303,53 @@ def compile_layout(mapping, fonts=None, *, resilient=False):
         groups = column_groups([r["rect"] for r in regions], bounds)
         for r, group in zip(regions, groups):
             r["column"] = group
+        def _combine_regions(a, b, *, same_logical=False):
+            first, second = _prose_order(a, b)
+            parts = deepcopy(first.get("parts", [])) + deepcopy(second.get("parts", []))
+            parts.sort(key=lambda p: p["rank"])
+            if same_logical:
+                for p in parts[1:]:
+                    p["paragraph_start"] = False
+            html_out = ""
+            for index, part in enumerate(parts):
+                if index and part["paragraph_start"] and not part["inline_fragment"]:
+                    html_out += "<br/>"
+                html_out += part["html"]
+            combined_rect = union([a["rect"], b["rect"]])
+            merged = {
+                **first,
+                "id": first["id"] + "+" + second["id"],
+                "rect": combined_rect,
+                "source_block_ids": sorted(
+                    first["source_block_ids"] + second["source_block_ids"],
+                    key=lambda i: rank.get(i, len(rank)),
+                ),
+                "source_rects": first["source_rects"] + second["source_rects"],
+                "html": html_out,
+                "parts": parts,
+                "size": clamp_body_font(
+                    min(a.get("size", 9.35), b.get("size", 9.35)),
+                    {
+                        "type": first.get("block_type", "paragraph"),
+                        "html": html_out,
+                        "rect": combined_rect,
+                        "inline_fragment": first.get("inline_fragment") and second.get("inline_fragment"),
+                    },
+                ),
+                "leading": min(a.get("leading", 1.17), b.get("leading", 1.17)),
+                "min_scale": max(a.get("min_scale", .88), b.get("min_scale", .88)),
+                "lead_x0": first.get("lead_x0", first["rect"][0]),
+            }
+            if first.get("block_type") not in {"caption", "heading", "title"}:
+                ps_font = float(merged.get("source_font_pt") or merged.get("size") or 9.35)
+                if merged["lead_x0"] - combined_rect[0] >= max(ps_font * 1.5, 16):
+                    merged["text_indent"] = True
+            if a.get("logical_paragraph_id") and a.get("logical_paragraph_id") == b.get("logical_paragraph_id"):
+                merged["logical_paragraph_id"] = a["logical_paragraph_id"]
+            else:
+                merged.pop("logical_paragraph_id", None)
+            return merged
+
         # Union overlapping prose, including superscript/chemical fragments, but
         # never bridge a gutter. Connected components are resolved transitively.
         changed = True
@@ -340,38 +387,58 @@ def compile_layout(mapping, fonts=None, *, resilient=False):
                             or is_stacked_script_fragment(b.get("html", ""))
                             or a.get("block_type") == "formula" or b.get("block_type") == "formula"):
                         continue
-                    first, second = _prose_order(a,b)
-                    # Overlapping extraction boxes can invert a fragment and
-                    # its parent; the compiled text order must follow the same
-                    # source order the reading-order audit verifies.
-                    parts = first.get("parts", []) + second.get("parts", [])
-                    parts.sort(key=lambda p: p["rank"])
-                    html = ""
-                    for index, part in enumerate(parts):
-                        if index and part["paragraph_start"] and not part["inline_fragment"]:
-                            html += "<br/>"
-                        html += part["html"]
-                    merged = {**first, "id": first["id"]+"+"+second["id"], "rect": union([a["rect"], b["rect"]]),
-                              "source_block_ids": sorted(first["source_block_ids"]+second["source_block_ids"],
-                                                         key=lambda i: rank.get(i, len(rank))),
-                              "source_rects": first["source_rects"]+second["source_rects"],
-                              "html": html, "parts": parts,
-                              "size": clamp_body_font(min(a.get("size", 9.35), b.get("size", 9.35)),
-                                                      {"type": first.get("block_type", "paragraph"),
-                                                       "html": html, "rect": union([a["rect"], b["rect"]]),
-                                                       "inline_fragment": first.get("inline_fragment") and second.get("inline_fragment")}),
-                              "leading": min(a.get("leading", 1.17), b.get("leading", 1.17)),
-                              "min_scale": max(a.get("min_scale", .88), b.get("min_scale", .88))}
-                    if a.get("logical_paragraph_id") and a.get("logical_paragraph_id") == b.get("logical_paragraph_id"):
-                        merged["logical_paragraph_id"] = a["logical_paragraph_id"]
-                    else:
-                        merged.pop("logical_paragraph_id", None)
-                    regions[i] = merged
+                    same_lp = bool(a.get("logical_paragraph_id") and a.get("logical_paragraph_id") == b.get("logical_paragraph_id"))
+                    regions[i] = _combine_regions(a, b, same_logical=same_lp)
                     regions.pop(j)
                     changed = True
                     break
                 if changed:
                     break
+        # Merge consecutive non-overlapping line boxes belonging to the same
+        # logical paragraph on this page so Chinese fills the full column width
+        # uniformly instead of breaking every line at ~55% width.
+        regions.sort(key=lambda r: min(rank[i] for i in r["source_block_ids"]))
+        idx = 0
+        while idx + 1 < len(regions):
+            a, b = regions[idx], regions[idx + 1]
+            lp = a.get("logical_paragraph_id")
+            if (lp and lp == b.get("logical_paragraph_id")
+                    and a.get("column") == b.get("column")
+                    and not (a.get("stacked_script") or b.get("stacked_script"))
+                    and a.get("block_type") not in {"formula", "table", "figure"}
+                    and b.get("block_type") not in {"formula", "table", "figure"}):
+                ps_pt = float(a.get("source_font_pt") or a.get("size") or 9.35)
+                gap_y = max(b["rect"][1] - a["rect"][3], a["rect"][1] - b["rect"][3], 0)
+                cand_rect = union([a["rect"], b["rect"]])
+                max_span = max(a["rect"][2] - a["rect"][0], b["rect"][2] - b["rect"][0])
+                inline_obs = lambda o: contains_rect(cand_rect, o) and (o[2] - o[0]) <= 16 and (o[3] - o[1]) <= 16
+                hits_prot = any(
+                    intersects(cand_rect, p["rect"])
+                    and not (p.get("type") not in ("figure",) and leading_bleed(cand_rect, p["rect"]))
+                    for p in protected
+                )
+                hits_obs = any(
+                    not inline_obs(o) and intersects(cand_rect, o)
+                    for o in page.get("spacing_obstacles", [])
+                )
+                hits_other = any(
+                    k not in (idx, idx + 1)
+                    and intersects(cand_rect, c["rect"])
+                    and not leading_bleed(cand_rect, c["rect"])
+                    for k, c in enumerate(regions)
+                )
+                same_row = abs((a["rect"][1] + a["rect"][3]) / 2 - (b["rect"][1] + b["rect"][3]) / 2) <= max(ps_pt * 0.7, 8)
+                aligned_col = (
+                    abs(a["rect"][0] - b["rect"][0]) <= max(ps_pt * 5, 45)
+                    and (cand_rect[2] - cand_rect[0]) <= max_span + max(ps_pt * 5, 45)
+                )
+                if (gap_y <= max(ps_pt * 2.5, 28)
+                        and (same_row or aligned_col)
+                        and not hits_prot and not hits_obs and not hits_other):
+                    regions[idx] = _combine_regions(a, b, same_logical=True)
+                    regions.pop(idx + 1)
+                    continue
+            idx += 1
         # White-space allocation stops at every horizontal obstacle, irrespective
         # of its column label. Neither redactions nor overlays consume that gap.
         drop_ids = set()
