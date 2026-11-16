@@ -39,6 +39,15 @@ def is_background_watermark(block):
     )
 
 
+_DECORATIVE_MARKER = re.compile(r"^[\s■●•▪◼◆□◦❖]+$")
+
+
+def is_decorative_marker(text):
+    """True for standalone geometric bullet/symbol markers kept native."""
+    plain = re.sub(r"<[^>]+>", "", text or "").strip()
+    return bool(plain and len(plain) <= 6 and _DECORATIVE_MARKER.fullmatch(plain))
+
+
 def _is_rotated_lines(lines):
     return any(abs(l.get("dir", [1, 0])[0] - 1) > 0.001 or abs(l.get("dir", [1, 0])[1]) > 0.001 for l in (lines or []))
 
@@ -105,6 +114,11 @@ def body_font_floor_applies(block):
     if kind not in {'paragraph', 'abstract'}:
         return False
     text = block.get('source_text') or block.get('html') or ''
+    if block.get('role') == 'metadata':
+        return False
+    plain_text = re.sub(r'<[^>]+>', '', text)
+    if re.match(r'^\s*(?:Cite\s+This|引用本文)\s*[:：]', plain_text, re.I):
+        return False
     if is_stacked_script_fragment(text):
         return False
     # A short translated clause is still body copy. Only citation-only chips
@@ -906,8 +920,12 @@ def classify(inspection):
                     if rotated:
                         reason = "rotated-text"
                         if kind == 'title':kind = 'header'
-                if text.strip() in {'■','●','•','▪','◼','◆'}:
+                if is_decorative_marker(text):
                     kind='figure';reason='native-decorative-marker'
+                    inline_parents=[]
+                    entry.pop("inline_fragment_of", None)
+                    if entry.get("role") == "inline-fragment":
+                        entry.pop("role", None)
                 # Author and publication metadata remains original, with its role
                 # exposed independently from the required public block taxonomy.
                 if pn == pages[0]["source_page"] and kind == "paragraph" and box[1] < metadata_limit:
@@ -1117,6 +1135,9 @@ def classify(inspection):
             marked = script_markup(entry.get("source_lines") or [])
             if not marked:
                 continue
+            if entry["type"] in {"heading", "title"} and not re.search(
+                    r"[A-Za-z0-9]", re.sub(r"<sup\b[^>]*>.*?</sup>", "", marked, flags=re.I | re.S)):
+                continue
             visible = re.sub(r"\s+", "", re.sub(r"</?(?:sup|sub)>", "", marked, flags=re.I))
             current = re.sub(r"\s+", "", entry.get("source_text", ""))
             if visible == current:
@@ -1126,7 +1147,8 @@ def classify(inspection):
         # Thin rules and decorative drawing objects can obstruct blank-space
         # allocation without being scientific figures eligible for protection.
         result["pages"].append({"source_page": pn, "rect": bounds, "protected": protected,
-                                "spacing_obstacles": deepcopy(page.get("drawing_clusters", []))})
+                                "spacing_obstacles": deepcopy(page.get("drawing_clusters", [])),
+                                "rule_obstacles": deepcopy(page.get("drawing_rules", []))})
     result["references"] = sorted(refs_by_number.values(), key=lambda r: r["number"])
     known = result["targets"]
     for b in result["blocks"]:

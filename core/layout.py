@@ -280,7 +280,7 @@ def compile_layout(mapping, fonts=None, *, resilient=False):
                       "source_rects": [list(box), *[list(r) for r in b.get("absorb_rects") or []]], "html": html,
                       "paragraph_start": b.get("paragraph_start", True),
                       "inline_fragment": b.get("role") == "inline-fragment",
-                      **{k: b[k] for k in ("size", "leading", "min_scale", "source_font_pt", "logical_paragraph_id") if k in b and b[k] is not None}}
+                      **{k: b[k] for k in ("size", "leading", "min_scale", "source_font_pt", "logical_paragraph_id", "role") if k in b and b[k] is not None}}
             if "size" in region:
                 region["size"] = clamp_body_font(region["size"], {**b, "html": html, "rect": region["rect"]})
             if (is_stacked_script_fragment(b.get("source_text", ""))
@@ -461,8 +461,10 @@ def compile_layout(mapping, fonts=None, *, resilient=False):
                 warnings.append({"check": "protected-intersection", "severity": "warning", "page": pn, "id": region["id"], "protected_id": hit_protected})
                 continue
             inline_obstacle = lambda o: contains_rect(box, o) and (o[2]-o[0]) <= 16 and (o[3]-o[1]) <= 16
+            below_rules = [o for o in page.get("rule_obstacles", []) if o[1] >= box[3] - 0.5]
             blockers = ([r["rect"] for r in regions if r is not region and r["id"] not in drop_ids]+[p["rect"] for p in protected]
-                        +[o for o in page.get("spacing_obstacles", []) if not inline_obstacle(o)])
+                        +[o for o in page.get("spacing_obstacles", []) if not inline_obstacle(o)]
+                        +below_rules)
             # Any horizontally overlapping object that starts below this region's
             # top limits the downward growth — including a neighbor whose top
             # sits a point above the region bottom because of font-metric bleed.

@@ -15,12 +15,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .classifier import adapted_body_size, intersects, is_background_watermark
+from .classifier import adapted_body_size, intersects, is_background_watermark, is_decorative_marker
 from .paragraphs import link_paragraphs, load_mineru_items
 from .pdf_reader import stable_id
 
 
 _CAPTION = re.compile(r'^(?:Fig(?:ure)?\.?|Table)\s*[A-Z]?\d+', re.I)
+_CAPTION_LINE = re.compile(r'(?m)^(?:Fig(?:ure)?\.?|Table)\s*[A-Z]?\d+', re.I)
 _SECRET = re.compile(r'(?i)(token|api[_ ]?key|authorization|bearer)([=: ]+)\S+')
 
 
@@ -194,6 +195,8 @@ def _is_caption(text, captions):
 
 def _apply_structure(block, item):
     """Retype a native block. Its rectangle and source text stay PyMuPDF's."""
+    if block.get('preservation_reason') == 'native-decorative-marker' or is_decorative_marker(block.get('source_text', '')):
+        return
     kind = item.get('type')
     if item.get('reference_source'):
         block.update(type='reference', translation_required=False, preservation_reason='bibliography')
@@ -231,7 +234,8 @@ def _apply_structure(block, item):
 def _hits(blocks, box, kind, blob):
     if kind in {'equation', 'table', 'image'}:
         return [block for block in blocks if _overlap_frac(block['rect'], box) >= 0.5]
-    geometric = [block for block in blocks if _center_in(block['rect'], box) or _overlap_frac(block['rect'], box) >= 0.45]
+    candidates = [b for b in blocks if not is_decorative_marker(b.get('source_text', ''))] if re.search(r'[A-Za-z0-9]', blob or '') else blocks
+    geometric = [block for block in candidates if _center_in(block['rect'], box) or _overlap_frac(block['rect'], box) >= 0.45]
     if not blob:
         return geometric
     contained = [block for block in geometric if _compact(block.get('source_text', '')) and _compact(block.get('source_text', '')) in blob]
@@ -240,7 +244,9 @@ def _hits(blocks, box, kind, blob):
 
 def _ocr_block(page, rect, text, kind, item, index):
     captions = _captions(item)
-    if kind in {'image', 'table'}:
+    if is_decorative_marker(text):
+        block_type, translatable = 'figure', False
+    elif kind in {'image', 'table'}:
         block_type, translatable = ('caption', True) if captions or _CAPTION.match(text) else (
             'table' if kind == 'table' else 'figure', False)
     elif kind == 'equation':
@@ -318,15 +324,31 @@ def fuse_mineru(mapping, extraction_dir):
                 _maybe_protect(pages[page_number], box, kind, mapping['blocks'])
                 order += 1
             continue
-        cap_match = _CAPTION.match(text) if kind in {'image', 'table'} else None
+        cap_match = _CAPTION_LINE.search(text) if kind in {'image', 'table'} else None
         cap_head = _compact(cap_match.group(0)) if cap_match else ''
         page_has_matching_caption = bool(cap_head) and any(
             block.get('source_page') == page_number
             and block.get('origin') != 'mineru-ocr'
-            and _compact(block.get('source_text', '')).startswith(cap_head)
+            and (
+                _compact(block.get('source_text', '')).startswith(cap_head)
+                or (block.get('type') == 'caption' and cap_head in _compact(block.get('source_text', '')))
+            )
             for block in mapping['blocks']
         )
-        has_native_overlap = page_has_matching_caption or any(
+        page_is_scanned = any(
+            issue.get('check') == 'no-extractable-text' and issue.get('page') == page_number
+            for issue in mapping.get('issues', [])
+        )
+        protected_graphic_overlap = (
+            not page_is_scanned
+            and kind in {'image', 'table'}
+            and any(
+                p.get('type') in {'figure', 'table'}
+                and (_overlap_frac(p['rect'], box) >= 0.25 or _overlap_frac(box, p['rect']) >= 0.25)
+                for p in pages[page_number].get('protected', [])
+            )
+        )
+        has_native_overlap = page_has_matching_caption or protected_graphic_overlap or any(
             block.get('source_page') == page_number
             and block.get('origin') != 'mineru-ocr'
             and block.get('rect')

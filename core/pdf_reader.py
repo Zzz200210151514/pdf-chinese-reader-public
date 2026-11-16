@@ -5,6 +5,7 @@ import hashlib
 import json
 import io
 import math
+import re
 from pathlib import Path
 
 import pymupdf as fitz
@@ -293,6 +294,13 @@ def _script_position(span, spans):
         return None
     flags = int(span.get('flags') or 0)
     if flags & 1:
+        # Whole lines of raised small-caps/heading glyphs carry bit 0 on every
+        # span with no base-line neighbor; keep ordinary word headings flat.
+        nonws = [s for s in spans if s.get('text', '').strip()]
+        if nonws and all(int(s.get('flags') or 0) & 1 for s in nonws):
+            combined = ''.join(s.get('text', '').strip() for s in nonws)
+            if len(combined) > 4 and re.search(r'[A-Za-z]{3,}', combined):
+                return None
         return 'sup'
     try:
         size = float(span.get('size') or 0)

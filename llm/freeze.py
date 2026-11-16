@@ -15,7 +15,8 @@ ENGLISH_CAPS = {'OF', 'IN', 'ON', 'BY', 'NO', 'SO', 'US', 'UP', 'OK', 'OR', 'AS'
 SCIENTIFIC_ACRONYMS = {'NF', 'UF', 'FO', 'PRO', 'BPM', 'CV', 'UV', 'PV', 'ICP', 'VOC',
                        'PAN', 'PS', 'PI', 'PP', 'PC', 'PU', 'RO', 'MD', 'MBR', 'ED',
                        'AEM', 'CEM', 'BPM', 'TOC', 'COD', 'BOD', 'SEM', 'TEM', 'XRD',
-                       'XPS', 'FTIR', 'NMR', 'HPLC', 'GC', 'MS', 'AFM', 'EDS', 'EDX'}
+                       'XPS', 'FTIR', 'NMR', 'HPLC', 'GC', 'MS', 'AFM', 'EDS', 'EDX',
+                       'CS', 'SW', 'SI', 'UK'}
 CHEM_FALSE_POSITIVES = ROMAN_NUMERALS | ENGLISH_CAPS | SCIENTIFIC_ACRONYMS
 # A leading-dot decimal (`.27`) never follows a word character or closing
 # bracket in scientific prose: `migration.27` is sentence-final punctuation
@@ -26,10 +27,32 @@ UNIT = re.compile(r'(?<![A-Za-z])(?:mol|mmol|μmol|µmol|nmol|mg|μg|µg|kg|g|mL
 TOKEN = re.compile(r'⟦V4_[a-f0-9]{8}_\d{4}⟧')
 
 
+def _outer_parens_wrap(text, start, end):
+    """True when ``text[start:end]`` is enclosed by one balanced ``(...)`` pair."""
+    if end - start < 3 or text[start] != '(' or text[end - 1] != ')':
+        return False
+    depth = 0
+    for idx in range(start, end - 1):
+        ch = text[idx]
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+            if depth == 0:
+                return False
+    return depth == 1
+
+
 def protected_spans(source):
     spans = []
     for m in CHEM.finditer(source):
-        value = m.group()
+        start, end = m.start(), m.end()
+        # Leave standalone prose parentheses outside the frozen token so Chinese
+        # translation parentheses never expand to `((CS))` / `（(MgCl2)）`.
+        while _outer_parens_wrap(source, start, end):
+            start += 1
+            end -= 1
+        value = source[start:end]
         # Single ordinary words matching an element (In, As) are not formulas.
         # Parentheses alone are not chemistry evidence either: English
         # `vanadium(V)` hides the `(V)` behind a Latin lookbehind while the
@@ -41,7 +64,7 @@ def protected_spans(source):
         if value in CHEM_FALSE_POSITIVES and not re.search(r'[\d₀-₉¹²³⁴⁵⁶⁷⁸⁹⁰⁺⁻+−]', value):
             continue
         if re.search(r'[\d₀-₉¹²³⁴⁵⁶⁷⁸⁹⁰⁺⁻+−]', value) or len(re.findall(ELEMENT, value)) > 1:
-            spans.append((m.start(), m.end()))
+            spans.append((start, end))
     spans += [(m.start(), m.end()) for m in NUM.finditer(source)]
     for m in UNIT.finditer(source):
         # A at a sentence start is an article; m/s/h can be prose variables.

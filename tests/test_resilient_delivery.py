@@ -407,6 +407,88 @@ class ResilientDeliveryTests(unittest.TestCase):
         self.assertNotIn('<br/>', regions[0]['html'])
         self.assertEqual(len(manifest['pages'][0]['redactions_original']), 3)
 
+    def test_acs_journal_detail_guards(self):
+        import json
+        from core.pdf_reader import script_markup
+        from core.mineru_hybrid import fuse_mineru
+        from core.classifier import classify, clamp_body_font
+        from core.layout import compile_layout
+        from llm.freeze import freeze, restore, audit
+
+        # 1. Whole-line raised all-caps headings with flags & 1 stay flat, not <sup>.
+        raised_heading = [{'spans': [
+            {'text': 'ASSOCIATED', 'size': 10.5, 'origin': [332, 155], 'flags': 21},
+            {'text': 'CONTENT', 'size': 10.5, 'origin': [394, 155], 'flags': 21},
+        ]}]
+        self.assertEqual(script_markup(raised_heading), 'ASSOCIATEDCONTENT')
+        self.assertNotIn('<sup>', script_markup(raised_heading))
+
+        # 2 & 3. Decorative marker '■' stays native under MinerU heading overlap, and
+        # MinerU panel-prefixed caption 'B\nFigure 2...' does not duplicate native Figure 2 caption.
+        mapping = {
+            'pages': [{
+                'source_page': 1, 'rect': [0.0, 0.0, 600.0, 800.0],
+                'protected': [{'id': 'img2', 'rect': [150.0, 60.0, 460.0, 185.0], 'type': 'figure'}],
+            }],
+            'blocks': [
+                {'id': 'sq', 'source_page': 1, 'type': 'figure', 'translation_required': False,
+                 'preservation_reason': 'native-decorative-marker',
+                 'rect': [317.0, 148.0, 324.0, 159.0], 'source_text': '■'},
+                {'id': 'hd', 'source_page': 1, 'type': 'paragraph', 'translation_required': True,
+                 'rect': [332.0, 147.0, 438.0, 158.0], 'source_text': 'ASSOCIATED CONTENT'},
+                {'id': 'cap2', 'source_page': 1, 'type': 'caption', 'translation_required': True,
+                 'rect': [50.0, 195.0, 555.0, 215.0], 'source_text': 'Figure 2. (A) Desalination efficiency.'},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            ext = Path(tmp) / 'extraction'
+            ext.mkdir()
+            (ext / 'content_list.json').write_text(json.dumps([
+                {'type': 'text', 'text_level': 1, 'text': '■ ASSOCIATED CONTENT', 'page_idx': 0,
+                 'bbox': [525, 180, 735, 202]},
+                {'type': 'image', 'image_caption': ['B\nFigure 2. (A) Desalination efficiency.'],
+                 'page_idx': 0, 'bbox': [250, 75, 766, 232]},
+            ]), encoding='utf-8')
+            report = fuse_mineru(mapping, ext)
+            self.assertEqual(report['ocr_blocks'], 0)
+            sq = next(b for b in mapping['blocks'] if b['id'] == 'sq')
+            self.assertFalse(sq['translation_required'])
+            self.assertEqual(sq['preservation_reason'], 'native-decorative-marker')
+
+        # 4. Outer parens stay outside frozen placeholders and acronyms (CS, SW, SI, UK) stay unfrozen.
+        frozen, tokens = freeze('concentrate solution (CS), seawater (SW), Supporting Information (SI), UK, (H2O), Ca(OH)2, (NH4)2SO4')
+        values = set(tokens.values())
+        for acronym in ('CS', '(CS)', 'SW', '(SW)', 'SI', '(SI)', 'UK'):
+            self.assertNotIn(acronym, values)
+        self.assertIn('H2O', values)
+        self.assertNotIn('(H2O)', values)
+        self.assertIn('Ca(OH)2', values)
+        self.assertIn('(NH4)2SO4', values)
+        self.assertIn('(⟦V4_', frozen)
+        self.assertEqual(restore(frozen, tokens), 'concentrate solution (CS), seawater (SW), Supporting Information (SI), UK, (H2O), Ca(OH)2, (NH4)2SO4')
+        self.assertEqual(audit('(H2O) and (CS)', '（H2O）和（CS）'), {'missing': [], 'added': []})
+
+        # 5. Cite This banner stays off BODY_FONT_FLOOR and stops growth before horizontal divider rule below it.
+        self.assertEqual(clamp_body_font(8.5, {'type': 'paragraph', 'source_text': 'Cite This: ACS EST Engg. 2024, 4, 1063-1072'}), 8.5)
+        cite_map = classify({
+            'sha256': 'e' * 64,
+            'pages': [{
+                'source_page': 1, 'rect': [0.0, 0.0, 600.0, 800.0], 'text': 'Cite This: ACS',
+                'drawing_clusters': [], 'drawing_rules': [[72.0, 174.8, 307.0, 176.8]], 'tables': [],
+                'blocks': [{'id': 'c1', 'bbox': [75.0, 161.6, 229.0, 170.6], 'tight_bbox': [75.0, 161.6, 229.0, 170.6],
+                            'text': 'Cite This: ACS EST Engg. 2024, 4, 1063-1072',
+                            'lines': [{'bbox': [75.0, 161.6, 229.0, 170.6], 'spans': [
+                                {'text': 'Cite This: ACS EST Engg. 2024, 4, 1063-1072', 'size': 8.5, 'flags': 0, 'origin': [75.0, 168.4]}
+                            ]}]}],
+            }],
+        })
+        cite_map['layout_reviewed'] = True
+        cite_map['blocks'][0]['translation'] = '引用本文：ACS EST Engg. 2024, 4, 1063-1072'
+        compiled = compile_layout(cite_map, resilient=True)
+        cite_region = compiled['pages'][0]['regions'][0]
+        self.assertLessEqual(cite_region['rect'][3], 174.0)
+        self.assertLess(cite_region['size'], 9.0)
+
 
 if __name__ == '__main__':
     unittest.main()
