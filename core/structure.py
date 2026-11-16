@@ -56,7 +56,7 @@ def source_order(mapping):
     return result
 
 
-def preflight(mapping, inspection=None):
+def preflight(mapping, inspection=None, *, resilient=False):
     issues = []
     def add(check, b=None, **fields):
         item = {'check': check, 'severity': 'blocking', **fields}
@@ -159,9 +159,13 @@ def preflight(mapping, inspection=None):
         key = issue.get('id', '')+'|'+issue['check']+'|'+str(issue.get('page', ''))
         decision = resolutions.get(key)
         benign = issue.get('check') in BENIGN_REVIEW
-        issues.append({**issue, 'issue_key': key,
-                       'severity': 'warning' if decision or benign else 'review-required',
-                       'resolution': decision or None})
+        if resilient and not decision and not benign:
+            issues.append({**issue, 'issue_key': key, 'severity': 'warning',
+                           'resolution': 'auto-deferred-resilient'})
+        else:
+            issues.append({**issue, 'issue_key': key,
+                           'severity': 'warning' if decision or benign else 'review-required',
+                           'resolution': decision or None})
     order = source_order(mapping)
     return {'passed': not any(i['severity'] == 'blocking' for i in issues),
             'ready_to_dispatch': not any(i['severity'] in {'blocking', 'review-required'} for i in issues),
@@ -169,6 +173,125 @@ def preflight(mapping, inspection=None):
             'checks': {'geometry': True, 'source_ids': True, 'navigation': True,
                        'classification': 'heuristics plus explicit issue review',
                        'font_fit': 'deferred until translations exist', 'semantic_accuracy': 'NOT CERTIFIED'}}
+
+
+def _preserve_block_with_group(blocks_by_id, block, reason, fallback_records, detail):
+    """Mark a block (and its logical continuation group) preserved as original."""
+    gid = block.get('logical_paragraph_id')
+    targets = [block]
+    if gid:
+        targets = [b for b in blocks_by_id.values() if b.get('logical_paragraph_id') == gid]
+    else:
+        anchor_id = block.get('translation_in') or block['id']
+        targets = [b for b in blocks_by_id.values()
+                   if b['id'] == anchor_id or b.get('translation_in') == anchor_id]
+    for item in targets:
+        if not item.get('translation_required', True):
+            continue
+        item['translation_required'] = False
+        item['preservation_reason'] = reason
+        item['auto_fallback'] = True
+        item.pop('translation_in', None)
+        item.pop('logical_paragraph_id', None)
+        item.pop('logical_source', None)
+        fallback_records.append({
+            'page': item.get('source_page'),
+            'id': item['id'],
+            'type': item.get('type', 'paragraph'),
+            'reason': detail,
+            'source_text': (item.get('source_text') or '')[:160],
+        })
+
+
+def reconcile_source_map(mapping, inspection=None):
+    """Automatically resolve blocking source-map collisions via graceful fallback.
+
+    Protected native images, tables, and formulas are never shrunk or dropped;
+    colliding prose fragments fall back to original-text preservation and are
+    logged into ``mapping['fallback_records']`` for the delivery report.
+    """
+    blocks_by_id = {b['id']: b for b in mapping.get('blocks', [])}
+    pages_by_no = {p['source_page']: p for p in mapping.get('pages', [])}
+    fallbacks = mapping.setdefault('fallback_records', [])
+    unresolved_links = mapping.setdefault('unresolved_links', [])
+    insp_records = {r['id']: r for r in (inspection or {}).get('records', [])}
+
+    for _ in range(4):
+        gate = preflight(mapping, inspection, resilient=True)
+        if gate['ready_to_dispatch']:
+            break
+        changed = False
+        for issue in gate['issues']:
+            if issue.get('severity') != 'blocking':
+                continue
+            chk = issue.get('check')
+            bid = issue.get('id')
+            if chk == 'unprotected-source-image' and bid in insp_records:
+                rec = insp_records[bid]
+                pg = pages_by_no.get(rec.get('page'))
+                if pg is not None:
+                    pg.setdefault('protected', []).append({
+                        'id': bid, 'rect': list(rec['bbox']), 'type': 'figure',
+                    })
+                    changed = True
+            elif chk == 'protected-intersection' and bid in blocks_by_id:
+                _preserve_block_with_group(
+                    blocks_by_id, blocks_by_id[bid],
+                    'auto-preserved-protected-intersection', fallbacks,
+                    f"与受保护对象 {issue.get('protected_id', '')} 边界交叉，保留原文",
+                )
+                changed = True
+            elif chk == 'cross-column-source-overlap' and bid in blocks_by_id:
+                other_id = issue.get('other_id')
+                a = blocks_by_id[bid]
+                b = blocks_by_id.get(other_id)
+                target = a
+                if b is not None:
+                    area_a = max(0, a['rect'][2] - a['rect'][0]) * max(0, a['rect'][3] - a['rect'][1])
+                    area_b = max(0, b['rect'][2] - b['rect'][0]) * max(0, b['rect'][3] - b['rect'][1])
+                    target = a if area_a <= area_b else b
+                _preserve_block_with_group(
+                    blocks_by_id, target,
+                    'auto-preserved-cross-column-overlap', fallbacks,
+                    f"跨栏文本块边界重叠（邻块 {other_id or ''}），自动保留原文",
+                )
+                changed = True
+            elif chk in ('invalid-source-rectangle', 'empty-source-text') and bid in blocks_by_id:
+                b = blocks_by_id[bid]
+                pg = pages_by_no.get(b.get('source_page'))
+                if pg and isinstance(b.get('rect'), list) and len(b['rect']) == 4:
+                    pr = pg['rect']
+                    x0 = max(pr[0], min(pr[2] - 1, b['rect'][0]))
+                    y0 = max(pr[1], min(pr[3] - 1, b['rect'][1]))
+                    x1 = min(pr[2], max(x0 + 1, b['rect'][2]))
+                    y1 = min(pr[3], max(y0 + 1, b['rect'][3]))
+                    b['rect'] = [x0, y0, x1, y1]
+                _preserve_block_with_group(
+                    blocks_by_id, b,
+                    f'auto-preserved-{chk}', fallbacks,
+                    f'几何或文本异常（{chk}），保留原文',
+                )
+                changed = True
+            elif chk == 'invalid-navigation-target' and bid:
+                targets = mapping.get('targets', {})
+                t = targets.get(bid)
+                pg = pages_by_no.get(t.get('source_page')) if t else None
+                if pg and isinstance(t.get('point'), list) and len(t['point']) == 2:
+                    pr = pg['rect']
+                    t['point'] = [max(pr[0], min(pr[2], t['point'][0])),
+                                  max(pr[1], min(pr[3], t['point'][1]))]
+                else:
+                    targets.pop(bid, None)
+                    unresolved_links.append({'key': bid, 'reason': 'invalid-navigation-target'})
+                changed = True
+            elif chk == 'missing-preservation-reason' and bid in blocks_by_id:
+                blocks_by_id[bid]['preservation_reason'] = 'auto-preserved-native'
+                changed = True
+        if not changed:
+            break
+
+    mapping['expected_block_ids'] = [b['id'] for b in mapping.get('blocks', [])]
+    return mapping, fallbacks
 
 
 def audit_order(mapping, manifest):

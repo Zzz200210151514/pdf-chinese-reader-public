@@ -492,14 +492,21 @@ def validate(m, manifest_dir):
     return targets, assets
 
 
-def build(manifest, output, fmt, theme='serif', embed=(), serif_weight=450):
+def build(manifest, output, fmt, theme='serif', embed=(), serif_weight=450, font_dir=None):
     manifest, output = Path(manifest).resolve(), Path(output).resolve()
-    if fmt not in ('md', 'html'):
-        raise ValueError('format must be md or html')
+    if fmt not in ('md', 'html', 'pdf'):
+        raise ValueError('format must be md, html or pdf')
     if theme not in THEMES:
         raise ValueError('theme must be serif, kai or sans')
     m = json.loads(manifest.read_text(encoding='utf-8-sig'))
     targets, assets = validate(m, manifest.parent)
+    if fmt == 'pdf':
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from core.doctor import _font_dirs
+        from core.reflow_pdf import render_reader_manifest_to_pdf
+        resolved_font_dir = font_dir or (_font_dirs()[0] if _font_dirs() else None)
+        return render_reader_manifest_to_pdf(m, manifest.parent, output, resolved_font_dir)
     blocks, refs, meta = m['blocks'], sorted(m.get('references', []), key=lambda r: r['number']), m.get('meta') or {}
     inline = Inline(fmt, targets)
     esc = inline.esc
@@ -776,7 +783,8 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--manifest', required=True)
     p.add_argument('--output', required=True)
-    p.add_argument('--format', choices=['md', 'html'], required=True)
+    p.add_argument('--format', choices=['md', 'html', 'pdf'], required=True)
+    p.add_argument('--font-dir', default=None, help='font directory when --format pdf is selected')
     p.add_argument('--theme', choices=THEMES, default='serif',
                    help='HTML default body font: serif 宋体 (default), kai 楷体/文楷, sans 黑体; readers can switch in 设置')
     p.add_argument('--embed-font', action='append', default=[], metavar='ROLE=PATH',
@@ -784,5 +792,5 @@ if __name__ == '__main__':
     p.add_argument('--serif-weight', type=int, default=450,
                    help='body weight for the serif theme; 450 suits variable Source Han/Noto Serif on Windows')
     args = p.parse_args()
-    print(json.dumps(build(args.manifest, args.output, args.format, args.theme, args.embed_font, args.serif_weight),
+    print(json.dumps(build(args.manifest, args.output, args.format, args.theme, args.embed_font, args.serif_weight, font_dir=args.font_dir),
                      ensure_ascii=False))

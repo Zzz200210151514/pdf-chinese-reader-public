@@ -215,16 +215,22 @@ def load_mineru_items(extraction_dir):
         return []
     found = []
     for path in sorted(root.rglob('*.json')):
-        if path.name in {'extraction-report.json', 'source.json'}:
+        if path.name == 'extraction-report.json':
             continue
         try:
             data = json.loads(path.read_text(encoding='utf-8-sig'))
         except (OSError, ValueError):
             continue
+        # Skip PyMuPDF inspect snapshots if present, while loading MinerU source.json content lists.
+        if isinstance(data, dict) and 'pages' in data and 'page_count' in data:
+            continue
         items = data if isinstance(data, list) else None
         if items is None and isinstance(data, dict):
             items = data.get('content_list') or data.get('pdf_info')
-        if isinstance(items, list) and any(isinstance(item, dict) and item.get('text') for item in items):
+        if isinstance(items, list) and any(
+            isinstance(item, dict) and (item.get('text') or ('bbox' in item and 'type' in item))
+            for item in items
+        ):
             found.extend(item for item in items if isinstance(item, dict))
     if found:
         return found

@@ -1,7 +1,8 @@
 """Work-directory status and pre-prepare environment probe (doctor)."""
-import hashlib, importlib, json, platform, sys
+import hashlib, importlib, json, os, platform, shutil, sys
 from pathlib import Path
 from . import engine_identity
+from .mineru_hybrid import _mineru_cli_config_token, mineru_token
 
 DEPENDENCIES = [
     ('pymupdf', 'PyMuPDF (PDF parse/build)'),
@@ -62,6 +63,50 @@ def _check_imports():
     return rows
 
 
+def _check_mineru():
+    """Probe MinerU CLI availability and credential presence without exposing token values."""
+    cli = (
+        shutil.which('mineru-open-api.exe')
+        or shutil.which('mineru-open-api')
+        or shutil.which('mineru-open-api.cmd')
+        or shutil.which('mineru-open-api.ps1')
+    )
+    resolved_cli = cli
+    if cli and cli.lower().endswith(('.cmd', '.bat', '.ps1')):
+        try:
+            scripts_dir = str(Path(__file__).resolve().parents[1] / 'scripts')
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            import mineru_extract
+            prefix = mineru_extract._resolve_cli_prefix(cli)
+            resolved_cli = prefix[0] if prefix else cli
+        except Exception:
+            pass
+    token_source = None
+    if os.environ.get('MINERU_API_KEY', '').strip():
+        token_source = 'env:MINERU_API_KEY'
+    elif os.environ.get('MINERU_TOKEN', '').strip():
+        token_source = 'env:MINERU_TOKEN'
+    elif os.environ.get('MINERU_TOKEN_FILE', '').strip() and Path(os.environ['MINERU_TOKEN_FILE'].strip()).is_file():
+        token_source = 'env:MINERU_TOKEN_FILE'
+    elif (Path.home() / '.config' / 'pdf-chinese-reader' / 'mineru-token').is_file():
+        token_source = 'file:~/.config/pdf-chinese-reader/mineru-token'
+    elif _mineru_cli_config_token():
+        token_source = 'file:~/.mineru/config.yaml'
+    elif mineru_token():
+        token_source = 'windows-credential-manager'
+    token_configured = token_source is not None
+    cli_found = bool(resolved_cli)
+    return {
+        'cli_found': cli_found,
+        'cli_path': resolved_cli,
+        'token_configured': token_configured,
+        'token_source': token_source,
+        'ready': cli_found and token_configured,
+        'status_text': '已配置就绪' if (cli_found and token_configured) else ('仅检测到CLI，缺少Token' if cli_found else ('仅检测到Token，未安装CLI' if token_configured else '未配置')),
+    }
+
+
 def _scientific_chars(text):
     return {ch for ch in text if ('\u0370' <= ch <= '\u03ff' or '\u2070' <= ch <= '\u209f'
             or ch in '¹²³±×÷−≈≤≥∂∑∫∞')}
@@ -75,6 +120,8 @@ def doctor(source=None, font_dir=None):
     """
     sysname = platform.system()
     result = {'platform': sysname, 'python': sys.version.split()[0],
+              'skill_loaded': True,
+              'mineru': _check_mineru(),
               'dependencies': _check_imports(), 'fonts': {}, 'fonts_yaml': '', 'coverage': None}
 
     candidates = FONT_CANDIDATES.get(sysname, FONT_CANDIDATES['Linux'])

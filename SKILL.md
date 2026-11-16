@@ -7,38 +7,32 @@ description: 将英文论文全文或样张翻译为中文 PDF、Markdown 或离
 
 - 以当前加载的本技能目录为根目录，读取此处 `SKILL.md` 并执行同目录的脚本，不依赖作者电脑路径或当前工作目录中的同名模块。
 - 从其他工作目录调用时，先解析实际安装根目录，再用 `python -X utf8 <技能根目录>/scripts/translator_v4.py <子命令> ...`；Python 辅助脚本按需将该根目录加入 `sys.path`。
-- 首次使用运行 `doctor`，以实际 `engine.root` 和 `engine.revision` 确认入口及版本。不同电脑的字体路径按探测结果配置。
+- 首次使用或每次加载本技能准备执行任务时，先运行 `doctor`，以实际 `engine.root` 和 `engine.revision` 确认入口及版本，并**第一时间向用户明确播报状态提示**（例如：`✅ pdf-chinese-reader 技能已加载（修订版 ...），MinerU 状态：<已配置就绪 / 未配置（缺少 CLI 或 Token，可先询问是否配置或改用本地提取）>`）。不同电脑的字体路径按探测结果配置。
 
 # 中文论文阅读版
 
-把英文学术文档完整翻译为中文 PDF、Markdown 或离线 HTML，复用原图、公式、书目和引用跳转。默认目标是**内容完整、清楚可读的阅读版**，允许普通留白、换行、字号和标点风格差异，不追求原版逐像素复刻。
+把英文学术文档完整翻译为中文 PDF（核心默认，默认纯中文；需要中英对照时再按要求制作）、Markdown 或离线 HTML，复用原图、公式、书目和引用跳转。**优先完整、清楚、稳定地交付**，允许自动调整版面或整篇重排，不追求原版逐像素复刻。
 
-## 默认工作方式
+## 默认工作方式（稳交付双轨模式）
 
-- 输出格式已经明确时直接执行。`prepare` 默认 `--extractor auto`：已配置 `MINERU_API_KEY`、`MINERU_TOKEN` 或凭据文件时用 MinerU 结构，否则或调用失败时记一条警告并改用本地提取，不中断 prepare。扫描件上传须按 [mineru.md](references/mineru.md) 说明并取得授权。用户只说“试试”时先做 2–4 页。
-- 默认单任务串行；只有用户明确要求时才按 [workflow.md](references/workflow.md#并发执行) 并发，不自动调用付费 API。
-- 一次翻译加重点校读；生成时保全语义，完成后只复核机械报警和关键科学含义。默认不做全文第二遍校对或逐页放大。用户明确要求“优秀/完美”时，按 [translation-quality.md](references/translation-quality.md) 增加精修。
-- 多格式共用译文，按 ID 复用缓存；字体、间距或跳转修正不触发全文重译。只读当前待译包、必要上下文与失败项，不反复打印全文和完整校验 JSON。
-- 翻译前一次设置正文、摘要及图注续段样式并冻结。局部失败先检查具体诊断并集中处理；有前置命令失败时不要继续执行依赖它的 `translate` 或 `finish`。
+- **MinerU 与本地提取**：`prepare` 默认 `--extractor auto`。已配置 CLI 与凭据（环境变量 `MINERU_API_KEY` / `MINERU_TOKEN`、凭据文件 `~/.config/pdf-chinese-reader/mineru-token`、`~/.mineru/config.yaml` 或 Windows 凭据管理器）时，直接调用 MinerU 结构化提取（涉密论文由用户提前说明）；若 `doctor` 提示未配置 MinerU，**先询问用户是“按步骤配置 MinerU（`npm install -g mineru-open-api` + 去 `https://mineru.net/apiManage/token` 申请 Token + 运行 `mineru-open-api auth` 或 `scripts/save_mineru_credential.py` 写入本地，再复检 `doctor`）”还是“先跳过 MinerU 改用本地提取”**——不要引导用户把真实密钥写入技能文件或 Git。若用户不同意或调用失败，自动改用本地提取并在交付说明中注明。
+- **默认参数**：`delivery_mode: resilient`、`layout_mode: auto`、`merge_batch_types: true`、`batch_size: 25`、`provider: host`、`concurrency: 1`（不主动调用外部付费翻译 API）。用户只说“试试”时先做 2–4 页。
+- **零阻塞容错降级**：`prepare` 与 `plan` 自动对与受保护图表/公式冲突或重叠的片段降级为“保留原文”，不要求人工逐条 `resolve` 才能启动翻译；翻译与构建阶段单块出现无法识别、缺失字形或极端空间冲突时，自动保留该块原文/原表继续构建，并写入 `<output>.report.md` 交付清单（注明页码和内容）。
+- **双轨排版（原位 + 统一重排兜底）**：`--layout-mode auto` 先尝试原位替换保留原论文布局；遇到空间不足时优先弹性压缩/适配；若大面积溢出或冲突过多（或直接指定 `--layout-mode reflow`，亦支持 `reader_export.py --format pdf`），自动切换为基于结构化清单的**统一中文论文重排 PDF**（保留原图、原表与公式切片、目录书签与可点击引用）。
+- **默认随机抽查 3 页**：`finish` 自动随机抽查 3 页（全文不足 3 页时全部检查），渲染截图到 `<output>.samples/` 并生成 `<output>.report.md`。宿主检查抽查截图与机械指标，发现问题按 ID 局部修复（仅当判断同类问题影响其他页面时有针对性扩大检查），不默认全文逐段对照。如实报告抽查结果，声明抽查不能证明全文每处都准确。
 
 ## PDF 工作流
 
-**双栏阅读样式：优先保留接近原稿的论文风格。** 保留原稿可辨识的刊名、出版标识、首页信息分区和正文页眉，图文大致位置参考原稿；不要求逐像素复刻。正文双栏，标题、摘要和大图可通栏；可适度调整段落区域、自然续栏和换页，保留论文的图文阅读节奏。只有一条流水线：`scripts/translator_v4.py` 的 prepare → plan → translate → finish，在原页上替换译文。
-
-MinerU 与本地提取只在 `prepare` 分流，之后的 `plan`、Router 翻译/术语/缓存、`apply` 与 `finish` 完全相同，都读写同一份 `source_map.json`。有文字层时，MinerU 提供块类型、段落分组和阅读顺序，PyMuPDF 字形提供擦除框和字号；扫描页没有文字层时，用 MinerU OCR 文本和反算后的 bbox 直接写入来源块。不要再走 HTML/Chromium 重排。细节见 [MinerU 提取](references/mineru-method.md)。
-
-译文须做到正文引用跳到文献、**点击文献条目的编号本身返回正文**；图表/公式跳转核对最终文件中的实际对象。不能只因目标ID存在就宣称落点正确。PDF静态返回首次引用；HTML可返回最近进入前的位置。只说“试试”先做2–4页，不默认重做全文。
-
-默认沿用原页布局。中文 PDF 的正文目标字号跟来源字号走，并夹在 **[8.5, 9.5] pt**：`min(9.5, max(8.5, round(source_font_pt * 1.05, 1)))`。紧凑的 8 pt 双栏不再锁成 9.5 pt 加 `min_scale: 1.0`。摘要约 9 pt，图题与表题 **8.2 pt，仅“图 7”“表 1”等编号标签加粗**（后续说明及 a、b、c、d 子图标记不加粗）。同一段落（含跨栏、跨页、跨框合并后的一个逻辑段）最终渲染的 `font_size` 和 `leading` 必须严格相同，不能前半段用一个字号、后半段再缩小。不要直接照搬原文 7 pt 以下的小字。应用到任务排版参数及溢出处理的方法见 [pdf-fonts.md](references/pdf-fonts.md#2-默认阅读样式与应用)。用户提供的样例作为阅读风格参考，不把微小差异当作失败。首次使用或环境变化时跑 `doctor`，核对 `engine.root` 和 `engine.revision`；已有任务先看 `status`，继续断点。
+一条流水线：`scripts/translator_v4.py` 的 `prepare → plan → translate → finish`（支持 `--layout-mode auto|inplace|reflow`、`--delivery-mode resilient|strict` 及独立 `sample` 命令）。
 
 | 阶段 | 操作 |
 |---|---|
-| prepare | 保存源 PDF 快照、来源清单与分类问题；已有工作目录复用，不反复提取。 |
-| 审核 / plan | 按需处理来源覆盖、公式/正文分类与真实冲突，用 `resolve` 记录结论，`plan --reviewed` 冻结来源。 |
-| translate | 串行翻译缺失 ID，通过 `translate --translations … --font-dir …` 提交；先补字体，再处理确需改译的 ID。 |
-| finish | 同一次执行中完成有限拟合、构建和验证。`passed` 或 `passed_with_warnings` 均正常交付，警告不要求返修或二次构建。 |
+| prepare | 保存 `work/source.pdf` 快照、执行提取（MinerU / 本地）与自动几何协调（保留原图/表/公式保护区），直接就绪。 |
+| plan | 按阅读顺序合并批次（默认每批最多 25 块）并冻结计划 `frozen-map.json`。 |
+| translate | 宿主串行消费 `pending-jobs.json` 并提交译文；单块校验异常不炸毁整批，自动告警或回退原文。 |
+| finish | 自动完成拟合/构建/重排兜底/链接还原，执行随机 3 页抽查，交付 PDF、`delivery.json` 与 `<output>.report.md`。 |
 
-具体命令见 [下一篇论文使用说明](references/v41/下一篇论文使用说明.md)。`--reviewed` 记录实际来源审核；字体和排版变化无需重译。
+具体命令见 [下一篇论文使用说明](references/v41/下一篇论文使用说明.md)。字体与排版默认：微软雅黑（Windows），正文目标字号 `[8.5, 9.5] pt`，图题与表题 `8.2 pt`（仅编号标签加粗），清晰蓝色引用与可点击书目返跳。少数引用无法跳转或少量正文/表格保留原文时，**正常交付 PDF**，并在 `<output>.report.md` 明确列出位置。
 
 ## 容差与交付标准
 

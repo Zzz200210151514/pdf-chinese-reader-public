@@ -9,7 +9,7 @@ from core.preservation import document_copy,restore_links,audit_document,align_a
 from core.resource_colors import snapshot_default_spaces,restore_default_spaces
 from core.fonts import resolve_fonts
 from core.raster import protected_pixmap
-from core.redaction import check_erasure_coverage
+from core.redaction import check_erasure_coverage, split_masks
 from core import engine_identity
 from core.validator import protected_pixel_level
 from core.classifier import BODY_FONT_FLOOR, body_font_floor_applies, clamp_body_font
@@ -172,13 +172,18 @@ def micro_region(item):
             and (item.get('inline_fragment') or bool(citation)))
 
 
-def check_layout(source,m,fontdir):
+def check_layout(source,m,fontdir,*,resilient=False):
     """Collect all geometry/fit problems before copying pages or embedding final fonts."""
+    is_resilient=resilient or bool(m.get('resilient'))
     css,archive=style(m,fontdir);issues=[];warnings=[];fits=[];seen=set()
+    drop_ids={}
+    fallback_records=list(m.get('fallback_records') or [])
     fonts=FontCoverage(m,fontdir)
     try:contract=validate_layout(m,'source')
     except ValueError as e:
-        contract=None;issues.append({'check':'layout-contract','detail':str(e)})
+        contract=None
+        if is_resilient:warnings.append({'check':'layout-contract','severity':'warning','detail':str(e)})
+        else:issues.append({'check':'layout-contract','detail':str(e)})
     if m.get('source_sha256') and m['source_sha256']!=hashlib.sha256(Path(source).read_bytes()).hexdigest():
         issues.append({'check':'source-hash-mismatch'})
     with fitz.open(source) as original:
@@ -187,17 +192,33 @@ def check_layout(source,m,fontdir):
             if n in seen or not 1<=n<=len(original):
                 issues.append({'page':n,'check':'duplicate-or-invalid-page'});continue
             seen.add(n);bounds=original[n-1].rect;boxes=[];mutations=[];ids=set()
+            page_drops=drop_ids.setdefault(n,set())
             for item in spec.get('regions',[]):
                 ident=item['id']
                 if ident in ids:issues.append({'page':n,'id':ident,'check':'duplicate-region-id'})
                 ids.add(ident)
                 try:r=rect(item['rect'],bounds)
-                except ValueError as e:issues.append({'page':n,'id':ident,'check':'invalid-rect','detail':str(e)});continue
+                except ValueError as e:
+                    if is_resilient:
+                        page_drops.add(ident)
+                        fallback_records.append({'page':n,'id':ident,'type':item.get('block_type','paragraph'),'reason':'坐标越界，保留原文','source_text':''})
+                        warnings.append({'page':n,'id':ident,'check':'invalid-rect','severity':'warning','detail':str(e)})
+                    else:
+                        issues.append({'page':n,'id':ident,'check':'invalid-rect','detail':str(e)})
+                    continue
                 boxes.append((ident,r));mutations.append(r)
+                if is_resilient:
+                    item['html']=(item['html'].replace('\u2009',' ').replace('\u202f',' ')
+                                  .replace('\u2212','-').replace('\u2010','-').replace('\u2011','-'))
                 _,missing=fonts.render(item['html'],item.get('bold',False))
                 if missing:
-                    issues.append({'page':n,'id':ident,'check':'missing-glyph','characters':missing,
-                                   'action':'Provide a covering fonts.fallback or explicit sub/sup markup; do not emit tofu glyphs.'})
+                    if is_resilient:
+                        page_drops.add(ident)
+                        fallback_records.append({'page':n,'id':ident,'type':item.get('block_type','paragraph'),'reason':f'缺失字形 {"".join(missing)}，保留原文','source_text':Plain(item['html']).text()[:120]})
+                        warnings.append({'page':n,'id':ident,'check':'missing-glyph','severity':'warning','characters':missing})
+                    else:
+                        issues.append({'page':n,'id':ident,'check':'missing-glyph','characters':missing,
+                                       'action':'Provide a covering fonts.fallback or explicit sub/sup markup; do not emit tofu glyphs.'})
                     continue
                 orig_size,orig_min_scale=item.get('size'),item.get('min_scale')
                 if body_font_floor_applies(item):
@@ -258,13 +279,31 @@ def check_layout(source,m,fontdir):
                         item.setdefault('fit_adjustment',{}).update(
                             kind='micro-fit',min_scale_before=original_min,min_scale_after=.75)
                     else:item['min_scale']=original_min
+                if spare<0 and is_resilient:
+                    _,needed=fit_only(item,bounds,fonts,css,archive,scale_low=0)
+                    if needed>=0.58:
+                        original_min=float(item.get('min_scale',1))
+                        original_leading=float(item.get('leading',1.17))
+                        item['leading']=min(original_leading,1.02)
+                        item['min_scale']=round(max(0.55,min(original_min,needed*0.97)),3)
+                        spare,scale=fit_only(item,bounds,fonts,css,archive)
+                        if spare>=0:
+                            item.setdefault('fit_adjustment',{}).update(
+                                kind='resilient-fit',min_scale_before=original_min,min_scale_after=item['min_scale'])
                 if spare<0:
                     _,needed=fit_only(item,bounds,fonts,css,archive,scale_low=0)
                     suggested_pt=round(float(item.get('size',9.35))*needed,2)
                     if orig_size is not None:item['size']=orig_size
                     if orig_min_scale is not None:item['min_scale']=orig_min_scale
-                    issues.append({'page':n,'id':ident,'check':'overflow','suggested_font_pt':suggested_pt,
-                                   'action':'Review spacing or enlarge/reflow the region; do not delete text or blindly accept a tiny font.'})
+                    if is_resilient:
+                        page_drops.add(ident)
+                        fallback_records.append({'page':n,'id':ident,'type':item.get('block_type','paragraph'),
+                                                 'reason':f'文本框空间不足（需字号约 {suggested_pt}pt），自动保留原文',
+                                                 'source_text':Plain(item['html']).text()[:120]})
+                        warnings.append({'page':n,'id':ident,'check':'overflow-fallback','severity':'warning','suggested_font_pt':suggested_pt})
+                    else:
+                        issues.append({'page':n,'id':ident,'check':'overflow','suggested_font_pt':suggested_pt,
+                                       'action':'Review spacing or enlarge/reflow the region; do not delete text or blindly accept a tiny font.'})
                 else:
                     item['_fit_scale']=scale
                     item['_page']=n
@@ -277,26 +316,57 @@ def check_layout(source,m,fontdir):
                 v=min(a.y1,b.y1)-max(a.y0,b.y0)
                 return 0<v<=max(2.5,.35*max(1.0,min(a.height,b.height,20)))
             for i,(ident,r) in enumerate(boxes):
+                if ident in page_drops:continue
                 for other,q in boxes[i+1:]:
-                    if r.intersects(q) and not bleed(r,q):issues.append({'page':n,'id':ident,'other':other,'check':'overlap'})
+                    if other in page_drops:continue
+                    if r.intersects(q) and not bleed(r,q):
+                        if is_resilient:
+                            drop_id=ident if r.get_area()<=q.get_area() else other
+                            page_drops.add(drop_id)
+                            fallback_records.append({'page':n,'id':drop_id,'type':'paragraph','reason':'渲染区域重叠，自动保留原文','source_text':''})
+                            warnings.append({'page':n,'id':drop_id,'other':other if drop_id==ident else ident,'check':'overlap','severity':'warning'})
+                        else:
+                            issues.append({'page':n,'id':ident,'other':other,'check':'overlap'})
             for value in spec.get('redactions',[])+[x['rect'] for x in spec.get('overlays',[])]:
                 try:mutations.append(rect(value,bounds))
-                except ValueError as e:issues.append({'page':n,'check':'invalid-mutation-rect','detail':str(e)})
+                except ValueError as e:
+                    if is_resilient:warnings.append({'page':n,'check':'invalid-mutation-rect','severity':'warning','detail':str(e)})
+                    else:issues.append({'page':n,'check':'invalid-mutation-rect','detail':str(e)})
             for item in spec.get('protected',[]):
                 try:r=rect(item['rect'],bounds)
-                except ValueError as e:issues.append({'page':n,'id':item.get('id'),'check':'invalid-protected-rect','detail':str(e)});continue
+                except ValueError as e:
+                    if is_resilient:warnings.append({'page':n,'id':item.get('id'),'check':'invalid-protected-rect','severity':'warning','detail':str(e)})
+                    else:issues.append({'page':n,'id':item.get('id'),'check':'invalid-protected-rect','detail':str(e)})
+                    continue
                 text_native=item.get('type') not in ('figure',)
                 if any(q.intersects(r) and not (text_native and bleed(q,r)) for q in mutations):
-                    issues.append({'page':n,'id':item.get('id'),'check':'protected-intersection',
-                        'action':'Re-divide prose and protected objects, then rerun preflight. This local collision does not authorize a whole-document layout change.'})
+                    if is_resilient:
+                        for reg in spec.get('regions',[]):
+                            rr=fitz.Rect(reg['rect'])
+                            if rr.intersects(r) and not (text_native and bleed(rr,r)):
+                                page_drops.add(reg['id'])
+                                fallback_records.append({'page':n,'id':reg['id'],'type':reg.get('block_type','paragraph'),
+                                                         'reason':f'与受保护对象 {item.get("id")} 交叉，自动保留原文','source_text':''})
+                        warnings.append({'page':n,'id':item.get('id'),'check':'protected-intersection','severity':'warning'})
+                    else:
+                        issues.append({'page':n,'id':item.get('id'),'check':'protected-intersection',
+                            'action':'Re-divide prose and protected objects, then rerun preflight. This local collision does not authorize a whole-document layout change.'})
+            if page_drops and is_resilient:
+                spec['regions']=[reg for reg in spec.get('regions',[]) if reg['id'] not in page_drops]
+                rem_masks=[box for reg in spec['regions'] for box in reg.get('source_rects',[reg['rect']])]
+                spec['redactions']=split_masks(rem_masks,spec.get('erase_guards',[]))
             for issue in check_erasure_coverage(original[n-1], spec, repair=True):
-                if issue.get('severity')=='warning':warnings.append(issue)
+                if issue.get('severity')=='warning' or is_resilient:
+                    warnings.append({**issue,'severity':'warning'})
                 else:issues.append(issue)
-    _unify_paragraph_typography(m, fonts, css, archive, fits, warnings, issues)
+    if is_resilient:
+        m['fallback_records']=fallback_records
+    _unify_paragraph_typography(m, fonts, css, archive, fits, warnings, issues, resilient=is_resilient)
     return {'layout_checks_passed':not issues,'layout_contract':contract,'issues':issues,'regions':fits,
-            'warnings':warnings,'blocking_count':len(issues),'warning_count':len(warnings)}
+            'warnings':warnings,'blocking_count':len(issues),'warning_count':len(warnings),
+            'fallback_count':len(fallback_records),'fallback_records':fallback_records}
 
-def _unify_paragraph_typography(manifest, fonts, css, archive, fits, warnings, issues):
+def _unify_paragraph_typography(manifest, fonts, css, archive, fits, warnings, issues, *, resilient=False):
     """One logical paragraph, including box A and box B, uses one size and leading."""
     failed={i.get('id') for i in issues if i.get('id')}
     grouped={}
@@ -353,12 +423,21 @@ def _unify_paragraph_typography(manifest, fonts, css, archive, fits, warnings, i
                     for m in members:
                         m['min_scale']=0.85
                     refits=refit_all()
+        if any(spare<0 for _,spare,_ in refits) and resilient:
+            for m in members:
+                m['leading']=min(float(m.get('leading',1.17)),1.02)
+                m['min_scale']=0.65
+            refits=refit_all()
         for m,spare,scale in refits:
             page=m.pop('_page',None)
             m.pop('_fit_scale',None)
             if spare<0:
-                issues.append({'page':page,'id':m['id'],'check':'overflow',
-                               'action':'Logical paragraph could not keep one font size and leading.'})
+                entry={'page':page,'id':m['id'],'check':'overflow',
+                       'action':'Logical paragraph could not keep one font size and leading.'}
+                if resilient:
+                    warnings.append({**entry,'severity':'warning'})
+                else:
+                    issues.append(entry)
                 continue
             for entry in fits:
                 if entry['id']==m['id'] and entry.get('page')==page:
@@ -366,8 +445,10 @@ def _unify_paragraph_typography(manifest, fonts, css, archive, fits, warnings, i
                     entry['spare_height_pt']=spare
         after=[(round(float(m.get('size',9.35)),2), round(float(m.get('leading',1.17)),3)) for m in members]
         if len({a[0] for a in after})!=1 or len({a[1] for a in after})!=1:
-            issues.append({'check':'paragraph-font-mismatch','id':gid,'severity':'blocking',
-                           'action':'A logical paragraph must render at one font size and leading.'})
+            entry={'check':'paragraph-font-mismatch','id':gid,'severity':'warning' if resilient else 'blocking',
+                   'action':'A logical paragraph must render at one font size and leading.'}
+            if resilient:warnings.append(entry)
+            else:issues.append(entry)
         elif before!=after:
             warnings.append({'check':'adaptive-fit','severity':'warning','id':gid,
                              'adjustment':{'kind':'paragraph-uniform','size':after[0][0],'leading':after[0][1]}})
@@ -417,13 +498,17 @@ def build(args):
     source=Path(args.source).resolve(); target=Path(args.output).resolve()
     if source==target: raise ValueError('Output must not overwrite source PDF')
     m=json.loads(Path(args.manifest).read_text(encoding='utf-8-sig'))
+    is_resilient=bool(getattr(args,'resilient',False) or m.get('resilient'))
     fontdir=Path(args.font_dir).resolve();css,archive=style(m,fontdir)
     fonts=FontCoverage(m,fontdir)
-    pre=check_layout(source,m,fontdir);target.parent.mkdir(parents=True,exist_ok=True)
+    pre=check_layout(source,m,fontdir,resilient=is_resilient);target.parent.mkdir(parents=True,exist_ok=True)
     timings['preflight_seconds']=round(time.perf_counter()-started,3);phase=time.perf_counter()
     prepath=target.with_suffix('.preflight.json');prepath.write_text(json.dumps(pre,ensure_ascii=False,indent=2),encoding='utf-8')
     target.with_suffix('.effective-layout.json').write_text(json.dumps(m,ensure_ascii=False,indent=2),encoding='utf-8')
-    if pre['issues']:raise ValueError(f'{len(pre["issues"])} layout problems; see {prepath}')
+    if pre['issues'] and not is_resilient:raise ValueError(f'{len(pre["issues"])} layout problems; see {prepath}')
+    runtime_warnings=[{**i,'severity':'warning'} for i in pre['issues']] if is_resilient else []
+    fallback_records=list(m.get('fallback_records') or [])
+    unresolved_links=list(m.get('unresolved_links') or [])
     original=fitz.open(source)
     specs=m['pages']; source_pages=[int(p['source_page']) for p in specs]
     if len(set(source_pages))!=len(source_pages):raise ValueError('Duplicate source pages')
@@ -440,15 +525,42 @@ def build(args):
         def bleed(a,b):
             v=min(a.y1,b.y1)-max(a.y0,b.y0)
             return 0<v<=max(2.5,.35*max(1.0,min(a.height,b.height,20)))
+        skip_indices=set()
         for i,r in enumerate(boxes):
-            if any(r.intersects(other) and not bleed(r,other) for other in boxes[i+1:]):raise ValueError('Text regions overlap')
+            if i in skip_indices:continue
+            if any(r.intersects(boxes[j]) and not bleed(r,boxes[j]) for j in range(i+1,len(boxes)) if j not in skip_indices):
+                if is_resilient:
+                    skip_indices.add(i)
+                    fallback_records.append({'page':spec['source_page'],'id':regions[i]['id'],'type':regions[i].get('block_type','paragraph'),'reason':'渲染区域重叠，跳过擦除并保留原文','source_text':''})
+                    runtime_warnings.append({'check':'runtime-overlap-fallback','severity':'warning','page':spec['source_page'],'id':regions[i]['id']})
+                else:
+                    raise ValueError('Text regions overlap')
+        prot_rects=[]
         for item in spec.get('protected',[]):
             r=rect(item['rect'],page.rect)
             text_native=item.get('type') not in ('figure',)
+            prot_rects.append((item['id'],r,text_native))
             overlays=[rect(o['rect'],page.rect) for o in spec.get('overlays',[])]
-            if any(b.intersects(r) and not (text_native and bleed(b,r)) for b in masks+boxes+overlays):
-                raise ValueError('Mutation crosses protected area: '+item['id'])
+            active_boxes=[b for idx,b in enumerate(boxes) if idx not in skip_indices]
+            if any(b.intersects(r) and not (text_native and bleed(b,r)) for b in masks+active_boxes+overlays):
+                if is_resilient:
+                    for idx,b in enumerate(boxes):
+                        if idx not in skip_indices and b.intersects(r) and not (text_native and bleed(b,r)):
+                            skip_indices.add(idx)
+                            fallback_records.append({'page':spec['source_page'],'id':regions[idx]['id'],'type':regions[idx].get('block_type','paragraph'),'reason':f'与受保护对象 {item["id"]} 交叉，保留原文','source_text':''})
+                    masks=[m_rect for m_rect in masks if not (m_rect.intersects(r) and not (text_native and bleed(m_rect,r)))]
+                    runtime_warnings.append({'check':'runtime-protected-fallback','severity':'warning','page':spec['source_page'],'id':item['id']})
+                else:
+                    raise ValueError('Mutation crosses protected area: '+item['id'])
             protected.append({'id':item['id'],'type':item.get('type','text'),'output_page':pn,'source_page':spec['source_page']-1,'rect':list(r)})
+        if skip_indices and is_resilient:
+            kept_regions=[reg for idx,reg in enumerate(regions) if idx not in skip_indices]
+            rem_masks=[box for reg in kept_regions for box in reg.get('source_rects',[reg['rect']])]
+            masks=[rect(x,page.rect) for x in split_masks(rem_masks,spec.get('erase_guards',[]))]
+            for _,pr,tn in prot_rects:
+                masks=[mr for mr in masks if not (mr.intersects(pr) and not (tn and bleed(mr,pr)))]
+            regions=kept_regions
+            boxes=[rect(r['rect'],page.rect) for r in regions]
         original_links=page.get_links()
         default_spaces=snapshot_default_spaces(page) if masks else None
         color_state=capture_separation_tints(page) if masks else {}
@@ -466,8 +578,16 @@ def build(args):
             # The fitter can land one ulp below min_scale; PyMuPDF asserts on
             # scale_low, so allow a float-epsilon margin.
             scale_low=max(0.0,float(item.get('min_scale',1))-1e-6)
-            spare,scale=page.insert_htmlbox(r,content(item,fonts),css=css,archive=archive,scale_low=scale_low)
-            if spare<0:raise ValueError(f'Text overflow: page {pn+1}, {item["id"]}')
+            try:
+                html_payload=content(item,fonts)
+            except ValueError as exc:
+                if not is_resilient:raise
+                runtime_warnings.append({'check':'runtime-glyph-fallback','severity':'warning','page':pn+1,'id':item['id'],'detail':str(exc)})
+                continue
+            spare,scale=page.insert_htmlbox(r,html_payload,css=css,archive=archive,scale_low=scale_low)
+            if spare<0:
+                if not is_resilient:raise ValueError(f'Text overflow: page {pn+1}, {item["id"]}')
+                runtime_warnings.append({'check':'runtime-overflow','severity':'warning','page':pn+1,'id':item['id']})
             checks.append({'id':item['id'],'page':pn,'rect':list(r),'scale':scale,'font_pt':size,'spare_height_pt':spare,
                            'expected_cjk':cjk(Plain(text).text()),'expected_symbols':scientific_symbols(Plain(text).text())})
     timings['text_rebuild_seconds']=round(time.perf_counter()-phase,3);phase=time.perf_counter()
@@ -490,7 +610,10 @@ def build(args):
                 used=r.height-spare;destinations[f'ref/{item["number"]}']=(page.number,fitz.Point(x,y))
                 reference_checks.append({'number':item['number'],'page':page.number,'rect':[x,y,x+width,y+used+1],'text':text})
                 y+=used+5;break
-            if y==72 and col==1:raise ValueError('A bibliography entry cannot fit in an empty column')
+            if y==72 and col==1:
+                if not is_resilient:raise ValueError('A bibliography entry cannot fit in an empty column')
+                runtime_warnings.append({'check':'bibliography-overflow','severity':'warning','number':item['number']})
+                break
             if col==0:col=1;y=72
             else:page=None
     # Avoid serializing repeated full CJK fonts to an in-memory buffer.
@@ -504,9 +627,16 @@ def build(args):
                 uri=link.get('uri','')
                 if not uri.startswith('https://pdf-reader.invalid/'):continue
                 key=uri.split('https://pdf-reader.invalid/',1)[1]
-                if key not in destinations:raise ValueError('Missing internal target: '+key)
+                if key not in destinations:
+                    if not is_resilient:raise ValueError('Missing internal target: '+key)
+                    unresolved_links.append({'key':key,'page':p.number+1,'reason':'missing-internal-target'})
+                    p.delete_link(link)
+                    continue
                 dst,point=destinations[key]
-                if not doc[dst].rect.contains(point):raise ValueError('Target point outside page: '+key)
+                if not doc[dst].rect.contains(point):
+                    if not is_resilient:raise ValueError('Target point outside page: '+key)
+                    point=fitz.Point(max(doc[dst].rect.x0,min(doc[dst].rect.x1,point.x)),
+                                     max(doc[dst].rect.y0,min(doc[dst].rect.y1,point.y)))
                 first.setdefault(key,(p.number,fitz.Point(link['from'].x0,max(0,link['from'].y0-20))))
                 box=link['from'];p.delete_link(link);p.insert_link({'kind':fitz.LINK_GOTO,'from':box,'page':dst,'to':point})
                 links.append({'key':key,'source_page':p.number+1,'target_page':dst+1,'from':list(box),'to':list(point)})
@@ -540,14 +670,19 @@ def build(args):
         actual_text=saved[item['page']].get_text(clip=fitz.Rect(item['rect']))
         actual=cjk(actual_text)
         item['cjk_complete']=actual==item.pop('expected_cjk')
-        if not item['cjk_complete']:raise ValueError('Chinese coverage mismatch: '+item['id'])
+        if not item['cjk_complete']:
+            if not is_resilient:raise ValueError('Chinese coverage mismatch: '+item['id'])
+            runtime_warnings.append({'check':'cjk-coverage-mismatch','severity':'warning','page':item['page']+1,'id':item['id']})
         item['scientific_symbols_complete']=not (Counter(item.pop('expected_symbols'))-Counter(scientific_symbols(actual_text)))
         if '\x00' in actual_text or not item['scientific_symbols_complete']:
-            raise ValueError('Scientific glyph coverage mismatch: '+item['id'])
+            if not is_resilient:raise ValueError('Scientific glyph coverage mismatch: '+item['id'])
+            runtime_warnings.append({'check':'scientific-glyph-mismatch','severity':'warning','page':item['page']+1,'id':item['id']})
     normalize=lambda s:re.sub(r'\s+','',s)
     for item in reference_checks:
         actual=saved[item['page']].get_text(clip=fitz.Rect(item['rect']))
-        if normalize(actual)!=normalize(item['text']):raise ValueError('Bibliography mismatch: '+str(item['number']))
+        if normalize(actual)!=normalize(item['text']):
+            if not is_resilient:raise ValueError('Bibliography mismatch: '+str(item['number']))
+            runtime_warnings.append({'check':'bibliography-mismatch','severity':'warning','number':item['number']})
     source_display_lists={};saved_display_lists={}
     for item in protected:
         r=fitz.Rect(item['rect']);a=protected_pixmap(original,item['source_page'],r,source_display_lists);b=protected_pixmap(saved,item['output_page'],r,saved_display_lists)
@@ -575,7 +710,9 @@ def build(args):
             level=protected_pixel_level(item.get('type'),src_text,out_text,diff)
             item['pixel_diff_percent']=diff
             item['pixel_level']=level
-            if level=='blocking':raise ValueError('Protected area changed: '+item['id'])
+            if level=='blocking':
+                if not is_resilient:raise ValueError('Protected area changed: '+item['id'])
+                runtime_warnings.append({'check':'protected-area-changed','severity':'warning','id':item['id'],'diff':diff})
             item['pixel_warning']=True
     # Review signals, not failures: prose nobody translated or preserved, and damage outside the declared regions.
     residue=[];outside=[]
@@ -593,11 +730,19 @@ def build(args):
         if ratio>.001:outside.append({'page':pn+1,'changed_ratio':round(ratio,5)})
     for p in saved:
         for link in p.get_links():
-            if 'pdf-reader.invalid' in link.get('uri',''):raise ValueError('Temporary URI remains')
-            if link['kind']==fitz.LINK_GOTO and not 0<=link['page']<len(saved):raise ValueError('Invalid GoTo page')
+            if 'pdf-reader.invalid' in link.get('uri',''):
+                if not is_resilient:raise ValueError('Temporary URI remains')
+                runtime_warnings.append({'check':'temporary-uri-remains','severity':'warning','page':p.number+1})
+            if link['kind']==fitz.LINK_GOTO and not 0<=link['page']<len(saved):
+                if not is_resilient:raise ValueError('Invalid GoTo page')
+                runtime_warnings.append({'check':'invalid-goto-page','severity':'warning','page':p.number+1})
     preservation=audit_document(original,saved,source_pages)
-    if not preservation['passed']:raise ValueError('Document or source links were not preserved: '+str(preservation))
-    if not refs and len(saved)!=len(source_pages):raise ValueError('Unexpected page count change')
+    if not preservation['passed']:
+        if not is_resilient:raise ValueError('Document or source links were not preserved: '+str(preservation))
+        runtime_warnings.append({'check':'document-preservation-warning','severity':'warning','detail':preservation})
+    if not refs and len(saved)!=len(source_pages):
+        if not is_resilient:raise ValueError('Unexpected page count change')
+        runtime_warnings.append({'check':'unexpected-page-count','severity':'warning'})
     timings['verification_seconds']=round(time.perf_counter()-phase,3);phase=time.perf_counter()
     previews=target.with_suffix('.previews');previews.mkdir(exist_ok=True)
     for i,p in enumerate(saved):p.get_pixmap(dpi=120).save(previews/f'page-{i+1:03}.png')
@@ -611,17 +756,18 @@ def build(args):
                 grid.show_pdf_page(fitz.Rect(x+5,y+22,x+295,y+415),saved,start+offset)
         sheet.save(target.with_suffix('.overview.pdf'),garbage=4,deflate=True)
     ref_numbers=set(numbers)|{int(key.split('/')[1]) for key in destinations if re.fullmatch(r'ref/[1-9]\d*',key)}
-    report={'engine':engine_identity(),'structural_checks_passed':True,'layout_contract':pre['layout_contract'],'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),'output_sha256':hashlib.sha256(target.read_bytes()).hexdigest(),'color_repairs':color_repairs,'body_source_pages':source_pages,'total_pages':len(saved),'reference_count':len(ref_numbers),'appended_reference_count':len(refs),'regions':checks,'protected':protected,'english_residue':residue,'outside_region_changes':outside,'links':links,'scope':m.get('scope',''),'translation_review':'NOT AUTOMATED','visual_review':'REQUIRED','reader_click_test':'NOT PERFORMED BY SCRIPT'}
-    warnings=pre['warnings']+[{'check':'protected-rendering-delta','severity':'warning',**item}
+    report={'engine':engine_identity(),'layout_mode':'inplace','structural_checks_passed':True,'layout_contract':pre['layout_contract'],'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),'output_sha256':hashlib.sha256(target.read_bytes()).hexdigest(),'color_repairs':color_repairs,'body_source_pages':source_pages,'total_pages':len(saved),'reference_count':len(ref_numbers),'appended_reference_count':len(refs),'regions':checks,'protected':protected,'english_residue':residue,'outside_region_changes':outside,'links':links,'fallback_records':fallback_records,'fallback_count':len(fallback_records),'unresolved_links':unresolved_links,'scope':m.get('scope',''),'translation_review':'NOT AUTOMATED','visual_review':'REQUIRED','reader_click_test':'NOT PERFORMED BY SCRIPT'}
+    warnings=pre['warnings']+runtime_warnings+[{'check':'protected-rendering-delta','severity':'warning',**item}
                               for item in protected if item.get('pixel_warning')]
     report.update(warnings=warnings,warning_count=len(warnings),blocking_count=0,
-                  delivery_status='passed_with_warnings' if warnings else 'passed',visual_review='OPTIONAL QUICK REVIEW')
+                  delivery_status='passed_with_warnings' if (warnings or fallback_records or unresolved_links) else 'passed',
+                  visual_review='OPTIONAL QUICK REVIEW')
     timings['preview_seconds']=round(time.perf_counter()-phase,3)
     timings['total_seconds']=round(time.perf_counter()-started,3)
     report.update(timings=timings,document_preservation=preservation,restored_source_links=restored_links,aligned_author_year_links=aligned_author_year_links,restored_default_color_spaces=restored_default_spaces)
     target.with_suffix('.validation.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps({'output':str(target),'pages':len(saved),'reference_count':len(ref_numbers),'structural_checks_passed':True,'english_residue':len(residue),'outside_region_changes':len(outside),
-                      'delivery_status':report['delivery_status'],'warnings':len(warnings)},ensure_ascii=False))
+                      'delivery_status':report['delivery_status'],'warnings':len(warnings),'fallbacks':len(fallback_records)},ensure_ascii=False))
     # Detailed bookmark extraction keeps native outline handles alive until GC.
     # Release PDF handles explicitly, particularly for Windows repeat builds.
     saved.close();original.close()
@@ -630,6 +776,6 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);sub=parser.add_subparsers(dest='command',required=True)
     a=sub.add_parser('inspect');a.add_argument('--source',required=True);a.add_argument('--output',required=True);a.add_argument('--pages',type=int,nargs='+');a.set_defaults(run=inspect)
     a=sub.add_parser('preflight');a.add_argument('--source',required=True);a.add_argument('--manifest',required=True);a.add_argument('--output',required=True);a.add_argument('--font-dir',required=True);a.set_defaults(run=preflight)
-    a=sub.add_parser('build');a.add_argument('--source',required=True);a.add_argument('--manifest',required=True);a.add_argument('--output',required=True);a.add_argument('--font-dir',required=True);a.set_defaults(run=build)
+    a=sub.add_parser('build');a.add_argument('--source',required=True);a.add_argument('--manifest',required=True);a.add_argument('--output',required=True);a.add_argument('--font-dir',required=True);a.add_argument('--resilient',action='store_true');a.set_defaults(run=build)
     args=parser.parse_args();args.run(args)
 if __name__=='__main__':main()

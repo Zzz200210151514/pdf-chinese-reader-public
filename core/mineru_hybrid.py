@@ -68,6 +68,21 @@ def _windows_token():
     return module.stored_token()
 
 
+def _mineru_cli_config_token():
+    cfg_path = Path.home() / '.mineru' / 'config.yaml'
+    if not cfg_path.is_file():
+        return None
+    try:
+        import yaml
+        data = yaml.safe_load(cfg_path.read_text(encoding='utf-8')) or {}
+    except Exception:
+        return None
+    if isinstance(data, dict):
+        tok = str(data.get('token') or data.get('api_token') or '').strip()
+        return tok or None
+    return None
+
+
 def mineru_token():
     """Return a configured MinerU credential, or None. Never log the value."""
     for name in ('MINERU_API_KEY', 'MINERU_TOKEN'):
@@ -84,6 +99,9 @@ def mineru_token():
             continue
         if text:
             return text
+    cli_cfg = _mineru_cli_config_token()
+    if cli_cfg:
+        return cli_cfg
     try:
         return _windows_token()
     except Exception:
@@ -298,6 +316,29 @@ def fuse_mineru(mapping, extraction_dir):
             if kind in {'image', 'table', 'equation'}:
                 _maybe_protect(pages[page_number], box, kind, mapping['blocks'])
                 order += 1
+            continue
+        cap_match = _CAPTION.match(text) if kind in {'image', 'table'} else None
+        cap_head = _compact(cap_match.group(0)) if cap_match else ''
+        page_has_matching_caption = bool(cap_head) and any(
+            block.get('source_page') == page_number
+            and block.get('origin') != 'mineru-ocr'
+            and _compact(block.get('source_text', '')).startswith(cap_head)
+            for block in mapping['blocks']
+        )
+        has_native_overlap = page_has_matching_caption or any(
+            block.get('source_page') == page_number
+            and block.get('origin') != 'mineru-ocr'
+            and block.get('rect')
+            and (_overlap_frac(block['rect'], box) >= 0.15
+                 or _overlap_frac(box, block['rect']) >= 0.15
+                 or _center_in(block['rect'], box)
+                 or _center_in(box, block['rect']))
+            for block in mapping['blocks']
+        )
+        if has_native_overlap:
+            if kind in {'image', 'table', 'equation'}:
+                _maybe_protect(pages[page_number], box, kind, mapping['blocks'])
+            order += 1
             continue
         added.append(_ocr_block(page_number, box, text, kind, item, order))
         ocr_pages.add(page_number)

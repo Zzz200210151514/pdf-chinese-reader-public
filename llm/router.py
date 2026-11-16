@@ -54,7 +54,7 @@ class Router:
             config = yaml.safe_load(Path(config).read_text(encoding='utf-8')) or {}
         self.config = {'provider': 'host', 'model': None, 'domain': 'chemistry', 'rules_version': '4.1', 'batch_size': 12, **config}
         reject_config_secrets(self.config)
-        self.glossary = Glossary(self.config.get('terminology_dir'))
+        self.glossary = Glossary(self.config.get('terminology_dir'), glossary_files=self.config.get('glossary_files'))
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
         if self.cache_dir:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -79,12 +79,16 @@ class Router:
             override = {'provider': override}
         return kind, {**self.config, **override}
 
+    def _is_resilient(self):
+        return self.config.get('delivery_mode') == 'resilient'
+
     def plan(self, mapping):
         blocks = self._blocks(mapping)
         groups = []
         batch_size = int(self.config.get('batch_size', 12))
         if not 1 <= batch_size <= 100:
             raise ValueError('batch_size must be in [1,100]')
+        merge_types = bool(self.config.get('merge_batch_types', False))
         for index, block in enumerate(blocks):
             kind, route = self._route(block)
             # Continuation boxes of a logical paragraph are translated with the
@@ -99,10 +103,13 @@ class Router:
             domain = block.get('domain', route.get('domain', 'chemistry'))
             text, frozen = freeze(source_text)
             assigned = {'id': block['id'], 'source_page': block.get('source_page'), 'type': kind, 'source_text': text, 'domain': domain}
-            signature = json.dumps({'type': kind, 'route': route, 'domain': domain}, sort_keys=True)
+            sig_obj = {'route': route, 'domain': domain} if merge_types else {'type': kind, 'route': route, 'domain': domain}
+            signature = json.dumps(sig_obj, sort_keys=True)
             if not groups or groups[-1]['signature'] != signature or len(groups[-1]['blocks']) >= batch_size:
                 groups.append({'id': f'job-{len(groups)+1:04d}', 'type': kind, 'provider': route['provider'], 'model': route.get('model'), 'route_config': route, 'blocks': [], 'neighbor_context': [], 'terms': [], 'instructions': INSTRUCTIONS, 'signature': signature, '_frozen': {}, '_source': {}, '_context': {}})
             job = groups[-1]
+            if job['type'] != kind:
+                job['type'] = 'mixed'
             job['blocks'].append(assigned)
             job['_frozen'][block['id']] = frozen
             job['_source'][block['id']] = source_text
@@ -134,6 +141,7 @@ class Router:
     def _validate(self, job, output):
         output = strict_json(output)
         expected = {b['id'] for b in job['blocks']}
+        resilient = self._is_resilient()
         if not isinstance(output, dict) or set(output) != expected:
             raise ValueError('Translation IDs missing or unknown')
         validated = {}
@@ -141,11 +149,32 @@ class Router:
             identity = block['id']
             value = output[identity]
             if not isinstance(value, str) or not value.strip():
+                if resilient:
+                    self._record({'job_id': job.get('id'), 'block_ids': [identity], 'status': 'warning',
+                                  'severity': 'warning', 'check': 'empty-translation-fallback',
+                                  'provider': job.get('provider'), 'model': job.get('model'),
+                                  'timestamp_utc': datetime.now(timezone.utc).isoformat(),
+                                  'duration_seconds': 0, 'usage': None})
+                    validated[identity] = job['_source'][identity]
+                    continue
                 raise ValueError('Translation must be a nonempty string')
-            value = restore(value, job['_frozen'][identity])
+            try:
+                value = restore(value, job['_frozen'][identity])
+                if '⟦V4_' in value:
+                    raise ValueError('Corrupted or unreplaced frozen placeholder')
+            except ValueError:
+                if not resilient:
+                    raise
+                self._record({'job_id': job.get('id'), 'block_ids': [identity], 'status': 'warning',
+                              'severity': 'warning', 'check': 'placeholder-fallback-original',
+                              'provider': job.get('provider'), 'model': job.get('model'),
+                              'timestamp_utc': datetime.now(timezone.utc).isoformat(),
+                              'duration_seconds': 0, 'usage': None})
+                validated[identity] = job['_source'][identity]
+                continue
             check = audit(job['_source'][identity], value)
             if check['missing'] or check['added']:
-                if check.get('severity') == 'warning':
+                if check.get('severity') == 'warning' or resilient:
                     self._record({'job_id': job.get('id'), 'block_ids': [identity], 'status': 'warning',
                                   'severity': 'warning', 'check': 'numeric-unit-audit',
                                   'missing': check['missing'], 'added': check['added'],
@@ -156,7 +185,7 @@ class Router:
                     raise ValueError(f'Protected chemistry/numeric/unit content changed for {identity}')
             value = self.glossary.apply(job['_source'][identity], value, block['domain'])
             term_issues = self.glossary.validate(job['_source'][identity], value, block['domain'])
-            if any(item.get('severity') != 'warning' for item in term_issues):
+            if any(item.get('severity') != 'warning' for item in term_issues) and not resilient:
                 raise ValueError(f'Forbidden contextual term for {identity}')
             if term_issues:
                 self._record({'job_id': job.get('id'), 'block_ids': [identity], 'status': 'warning',
@@ -184,7 +213,7 @@ class Router:
         # Scheduling, geometry and batch size do not alter translation meaning.
         policy = {k: v for k, v in job['route_config'].items() if k not in
                   ('batch_size', 'concurrency', 'validation_retries', 'timeout', 'retries',
-                   'workflow_id', 'routes', 'terminology_dir')}
+                   'workflow_id', 'routes', 'terminology_dir', 'glossary_files')}
         for field in ('fonts', 'font_dir', 'font_size', 'layout', 'quality_mode'):
             policy.pop(field, None)
         block = next(b for b in job['blocks'] if b['id'] == identity)
@@ -235,10 +264,20 @@ class Router:
         retries = int(self.config.get('validation_retries', 0))
         if not 1 <= concurrency <= 8 or not 0 <= retries <= 3:
             raise ValueError('concurrency must be in [1,8], validation_retries in [0,3]')
+        resilient = self._is_resilient()
         supplied = strict_json(supplied) if supplied is not None else {}
         expected = {b['id'] for job in jobs for b in job['blocks']}
-        if not isinstance(supplied, dict) or not set(supplied).issubset(expected):
+        if not isinstance(supplied, dict):
             raise ValueError('Supplied translation IDs unknown')
+        extra_supplied = set(supplied) - expected
+        if extra_supplied:
+            if not resilient:
+                raise ValueError('Supplied translation IDs unknown')
+            self._record({'job_id': None, 'block_ids': sorted(extra_supplied), 'status': 'warning',
+                          'severity': 'warning', 'check': 'ignored-unknown-supplied-ids',
+                          'timestamp_utc': datetime.now(timezone.utc).isoformat(),
+                          'duration_seconds': 0, 'usage': None})
+            supplied = {k: v for k, v in supplied.items() if k in expected}
         results, pending = {}, []
         for job in jobs:
             # Import old exact-job entries once; never let them replace revisions.

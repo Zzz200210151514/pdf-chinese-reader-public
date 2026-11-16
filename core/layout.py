@@ -27,7 +27,8 @@ def create_source_map(inspection):
 
 
 def _markup(text, known, colours=None, citation_tokens=(), author_years=None,
-            link_blue=None, caption_key=None, caption_ink=None):
+            link_blue=None, caption_key=None, caption_ink=None,
+            resilient=False, unresolved_links=None):
     colours = colours or {}
     author_years = author_years or {}
     link_blue = usable_link_hex(link_blue)
@@ -57,6 +58,12 @@ def _markup(text, known, colours=None, citation_tokens=(), author_years=None,
         kind, n, label = match.groups()
         key = kind+"/"+n
         if key not in known:
+            if resilient:
+                if unresolved_links is not None:
+                    unresolved_links.append({"key": key, "label": label or n, "reason": "missing-navigation-target"})
+                text_label = label or n
+                colour = usable_link_hex(colours.get(key)) or link_blue
+                return f'<span style="color:{colour};">{text_label}</span>' if colour else text_label
             raise LayoutError([{"check": "missing-navigation-target", "id": key}])
         return linked(key, label or n)
     escaped = re.sub(r"\[\[(fig|ref|table|eq):(\d+)(?:\|([^\]]+))?\]\]", explicit, escaped)
@@ -147,14 +154,15 @@ def _prose_order(a,b):
 from .scientific_markup import restore_scientific_markup as scientific_markup
 
 
-def compile_layout(mapping, fonts=None):
+def compile_layout(mapping, fonts=None, *, resilient=False):
     """Compile without translating, truncating, shrinking, or changing page order.
 
     Expansion uses only vertical blank space in the source column. A collision
-    with a native object fails explicitly. Overlapping prose fragments may share
-    a region only in the same column; all contributing IDs are retained.
+    with a native object fails explicitly unless ``resilient=True``, in which
+    case colliding prose regions fall back to preserving the original PDF area
+    and missing navigation targets remain unlinked text recorded in the report.
     """
-    if not mapping.get("layout_reviewed"):
+    if not mapping.get("layout_reviewed") and not resilient:
         raise LayoutError([{"check": "source-map-not-reviewed"}])
     from .structure import source_order, audit_order
     prepare_render_text(mapping)
@@ -168,6 +176,8 @@ def compile_layout(mapping, fonts=None):
     bibliography = deepcopy(mapping.get("references", []))
     append_refs = mapping.get("explicitappendrefs") is True
     targets = deepcopy(mapping.get("targets", {}))
+    unresolved_links = list(mapping.get("unresolved_links", []))
+    fallback_records = list(mapping.get("fallback_records", []))
     # The legacy writer appends every references entry. An in-place reader has
     # native bibliography destinations instead; keep the directory separately.
     if not append_refs:
@@ -177,7 +187,10 @@ def compile_layout(mapping, fonts=None):
                 targets[key] = {"source_page": ref["source_page"], "point": ref["rect"][:2]}
         missing = [f"ref/{r['number']}" for r in bibliography if f"ref/{r['number']}" not in targets]
         if missing:
-            raise LayoutError([{"check": "native-reference-target-missing", "id": key} for key in missing])
+            if not resilient:
+                raise LayoutError([{"check": "native-reference-target-missing", "id": key} for key in missing])
+            for key in missing:
+                unresolved_links.append({"key": key, "reason": "native-reference-target-missing"})
     known = set(targets) | ({f"ref/{r['number']}" for r in bibliography} if append_refs else set())
     from .fonts import resolve_fonts
     manifest = {"schema_version": "4.0", "title": mapping.get("title", "中文全文阅读版"),
@@ -186,6 +199,7 @@ def compile_layout(mapping, fonts=None):
                 "targets": targets, "references": bibliography if append_refs else [], "bibliography": bibliography,
                 "explicitappendrefs": append_refs,
                 "link_blue": link_blue,
+                "resilient": resilient,
                 "pages": [], "expected_block_ids": ids}
     for key in ("layout_mode", "requested_layout", "layout_change_authorized", "reference_layout"):
         if key in mapping:
@@ -212,7 +226,10 @@ def compile_layout(mapping, fonts=None):
                 continue
             if not b.get("translation_required", True):
                 if not b.get("preservation_reason"):
-                    issues.append({"check": "missing-preservation-reason", "id": b["id"]})
+                    if resilient:
+                        b["preservation_reason"] = "auto-preserved-native"
+                    else:
+                        issues.append({"check": "missing-preservation-reason", "id": b["id"]})
                 protected.append({"id": b["id"], "rect": list(box), "type": b.get("type", "native")})
                 # Preserve original per-span font bounds, not the enclosing
                 # source block (which can include translated neighboring text).
@@ -225,7 +242,12 @@ def compile_layout(mapping, fonts=None):
                 continue
             text = b.get("render_html", b.get("translation", ""))
             if not isinstance(text, str) or not text.strip():
-                issues.append({"check": "missing-translation", "id": b["id"]})
+                if resilient:
+                    fallback_records.append({"page": pn, "id": b["id"], "type": b.get("type", "paragraph"),
+                                             "reason": "译文缺失，自动保留原文", "source_text": (b.get("source_text") or "")[:160]})
+                    warnings.append({"check": "missing-translation-fallback", "severity": "warning", "page": pn, "id": b["id"]})
+                else:
+                    issues.append({"check": "missing-translation", "id": b["id"]})
                 continue
             source_lines = b.get('source_lines', [])
             # Continuation slices share the anchor's citation geometry so a
@@ -237,7 +259,7 @@ def compile_layout(mapping, fonts=None):
             text, citation_tokens, colours, citation_issues = restore_citations(text, source_lines, known)
             for issue in citation_issues:
                 tagged = {**issue, 'id': b['id'], 'page': pn}
-                if issue.get('check') == 'citation-alignment-needs-review':
+                if issue.get('check') == 'citation-alignment-needs-review' or resilient:
                     warnings.append({**tagged, 'severity': 'warning'})
                 else:
                     issues.append(tagged)
@@ -245,7 +267,8 @@ def compile_layout(mapping, fonts=None):
             ay = author_year_colours(source_lines)
             cap_key, cap_ink = caption_title_ink(source_lines) if b.get('type') == 'caption' else (None, None)
             markup = _markup(scientific_markup(text, source_lines), known, colours, citation_tokens, ay,
-                             link_blue=link_blue, caption_key=cap_key, caption_ink=cap_ink)
+                             link_blue=link_blue, caption_key=cap_key, caption_ink=cap_ink,
+                             resilient=resilient, unresolved_links=unresolved_links)
             html = "<b>"+markup+"</b>" if b.get("bold") else markup
             absorbed_ids = list(b.get("absorbs") or [])
             source_ids = sorted({b["id"], *absorbed_ids}, key=lambda i: rank.get(i, len(rank)))
@@ -296,6 +319,15 @@ def compile_layout(mapping, fonts=None):
                     # defines reading order regardless of column labels.
                     contained = contains_rect(a["rect"], b["rect"]) or contains_rect(b["rect"], a["rect"])
                     if not same_column and not contained and not (a["column"] == b["column"] == "full" and nested_fragment):
+                        if resilient:
+                            drop_idx = j if ((b["rect"][2] - b["rect"][0]) * (b["rect"][3] - b["rect"][1])
+                                             <= (a["rect"][2] - a["rect"][0]) * (a["rect"][3] - a["rect"][1])) else i
+                            dropped = regions.pop(drop_idx)
+                            fallback_records.append({"page": pn, "id": dropped["id"], "type": dropped.get("block_type", "paragraph"),
+                                                     "reason": "跨栏区域重叠，自动保留原文", "source_text": ""})
+                            warnings.append({"check": "cross-column-prose-overlap", "severity": "warning", "id": dropped["id"], "page": pn})
+                            changed = True
+                            break
                         issues.append({"check": "cross-column-prose-overlap", "id": a["id"], "other": b["id"], "page": pn})
                         continue
                     # Selectivity charges and ion scripts stay math. Merging them
@@ -340,16 +372,27 @@ def compile_layout(mapping, fonts=None):
                     break
         # White-space allocation stops at every horizontal obstacle, irrespective
         # of its column label. Neither redactions nor overlays consume that gap.
+        drop_ids = set()
         for region in regions:
             box = region["rect"]
+            hit_protected = None
             for native in protected:
                 # Font-metric bleed is tolerated only between text-like native
                 # objects; a paragraph overlapping a figure is always damage.
                 text_native = native.get("type") not in ("figure",)
                 if intersects(box, native["rect"]) and not (text_native and leading_bleed(box, native["rect"])):
+                    if resilient:
+                        hit_protected = native["id"]
+                        break
                     issues.append({"check": "protected-intersection", "page": pn, "id": region["id"], "protected_id": native["id"]})
+            if hit_protected:
+                drop_ids.add(region["id"])
+                fallback_records.append({"page": pn, "id": region["id"], "type": region.get("block_type", "paragraph"),
+                                         "reason": f"区域与受保护对象 {hit_protected} 交叉，保留原文", "source_text": ""})
+                warnings.append({"check": "protected-intersection", "severity": "warning", "page": pn, "id": region["id"], "protected_id": hit_protected})
+                continue
             inline_obstacle = lambda o: contains_rect(box, o) and (o[2]-o[0]) <= 16 and (o[3]-o[1]) <= 16
-            blockers = ([r["rect"] for r in regions if r is not region]+[p["rect"] for p in protected]
+            blockers = ([r["rect"] for r in regions if r is not region and r["id"] not in drop_ids]+[p["rect"] for p in protected]
                         +[o for o in page.get("spacing_obstacles", []) if not inline_obstacle(o)])
             # Any horizontally overlapping object that starts below this region's
             # top limits the downward growth — including a neighbor whose top
@@ -360,12 +403,24 @@ def compile_layout(mapping, fonts=None):
             # object. Shrinking a row bottom that bleeds into the next line is
             # also required: the redaction and text clip must not capture the
             # neighbour's glyphs.
+            orig_y1 = box[3]
             if limit-1 > box[1]+2 and abs((limit-1)-box[3]) > .01:
                 region["rect"][3] = limit-1
             for native in protected:
                 text_native = native.get("type") not in ("figure",)
                 if intersects(region["rect"], native["rect"]) and not (text_native and leading_bleed(region["rect"], native["rect"])):
-                    issues.append({"check": "protected-intersection-after-spacing", "page": pn, "id": region["id"], "protected_id": native["id"]})
+                    if resilient:
+                        region["rect"][3] = orig_y1
+                        if intersects(region["rect"], native["rect"]) and not (text_native and leading_bleed(region["rect"], native["rect"])):
+                            drop_ids.add(region["id"])
+                            fallback_records.append({"page": pn, "id": region["id"], "type": region.get("block_type", "paragraph"),
+                                                     "reason": f"排版扩展后与受保护对象 {native['id']} 交叉，保留原文", "source_text": ""})
+                            warnings.append({"check": "protected-intersection-after-spacing", "severity": "warning", "page": pn, "id": region["id"], "protected_id": native["id"]})
+                            break
+                    else:
+                        issues.append({"check": "protected-intersection-after-spacing", "page": pn, "id": region["id"], "protected_id": native["id"]})
+        if drop_ids:
+            regions = [r for r in regions if r["id"] not in drop_ids]
         original_masks = [box for r in regions for box in r['source_rects']]
         manifest["pages"].append({"source_page": pn, "regions": regions,
                                   "redactions": split_masks(original_masks, erase_guards),
@@ -375,8 +430,15 @@ def compile_layout(mapping, fonts=None):
     # traverses the generated text layer. Derive it from source column bands.
     for page in manifest['pages']:
         page['regions'].sort(key=lambda r: min(rank[i] for i in r['source_block_ids']))
-    issues.extend(audit_order(mapping, manifest)['issues'])
+    order_issues = audit_order(mapping, manifest)['issues']
+    if resilient:
+        for oi in order_issues:
+            warnings.append({**oi, 'severity': 'warning'})
+    else:
+        issues.extend(order_issues)
     manifest['warnings'] = warnings
-    if issues:
+    manifest['fallback_records'] = fallback_records
+    manifest['unresolved_links'] = unresolved_links
+    if issues and not resilient:
         raise LayoutError(issues)
     return manifest

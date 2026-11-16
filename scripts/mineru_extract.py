@@ -20,6 +20,32 @@ def stored_token():
  finally:
   api.CredFree.argtypes=[ctypes.POINTER(CREDENTIAL)];api.CredFree.restype=None;api.CredFree(pointer)
 
+def _resolve_cli_prefix(cli_arg=None):
+ """Resolve MinerU CLI to a direct executable prefix, handling Windows npm wrappers."""
+ cli=cli_arg or shutil.which('mineru-open-api.exe') or shutil.which('mineru-open-api') or shutil.which('mineru-open-api.cmd') or shutil.which('mineru-open-api.ps1')
+ if not cli:
+  raise SystemExit('MinerU CLI not found on PATH; install mineru-open-api or pass --cli.')
+ path=Path(cli)
+ suffix=path.suffix.lower()
+ if suffix in ('.cmd','.bat','.ps1'):
+  pkg_root=path.parent/'node_modules'/'mineru-open-api'/'node_modules'
+  if pkg_root.is_dir():
+   for pattern in ('mineru-open-api-*/bin/mineru-open-api.exe','mineru-open-api-*/bin/mineru-open-api'):
+    matches=sorted(pkg_root.glob(pattern))
+    if matches and matches[0].is_file():
+     return [str(matches[0])]
+  sibling_exe=path.with_suffix('.exe')
+  if sibling_exe.is_file():
+   return [str(sibling_exe)]
+  if suffix in ('.cmd','.bat'):
+   sibling_cmd=path
+   return ['cmd.exe','/d','/c',str(sibling_cmd)]
+  sibling_cmd=path.with_suffix('.cmd')
+  if sibling_cmd.is_file():
+   return ['cmd.exe','/d','/c',str(sibling_cmd)]
+  return ['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(path)]
+ return [str(cli)]
+
 def main():
  p=argparse.ArgumentParser(description=__doc__)
  p.add_argument('--source',required=True);p.add_argument('--output',required=True)
@@ -30,12 +56,10 @@ def main():
  p.add_argument('--ocr',action='store_true');p.add_argument('--timeout',type=int,default=300)
  a=p.parse_args();source=Path(a.source).resolve();out=Path(a.output).resolve()
  if a.structured and a.mode!='precision':p.error('--structured requires precision mode')
- cli=a.cli or shutil.which('mineru-open-api.exe') or shutil.which('mineru-open-api')
- if not cli or Path(cli).suffix.lower() in ('.cmd','.ps1'):
-  raise SystemExit('Provide --cli with the MinerU native executable path; a shell wrapper is insufficient.')
+ cli_prefix=_resolve_cli_prefix(a.cli)
  import os
- token=os.environ.get('MINERU_TOKEN') or stored_token()
- version=subprocess.run([cli,'version'],capture_output=True,text=True,encoding='utf-8',errors='replace',check=True).stdout.strip()
+ token=os.environ.get('MINERU_TOKEN') or os.environ.get('MINERU_API_KEY') or stored_token()
+ version=subprocess.run([*cli_prefix,'version'],capture_output=True,text=True,encoding='utf-8',errors='replace',check=True).stdout.strip()
  parameters={'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),'mode':a.mode,'model':a.model if a.mode=='precision' else None,'ocr':a.ocr,'formula':True,'table':True,'language':'en','cli_version':version}
  if a.structured:parameters['formats']=['md','json']
  key=hashlib.sha256(json.dumps(parameters,sort_keys=True).encode()).hexdigest()[:20]
@@ -48,7 +72,7 @@ def main():
  # A fresh attempt cannot inherit a Markdown file left by an earlier failure.
  with tempfile.TemporaryDirectory(prefix='mineru-attempt-',dir=out) as temp:
   stage=Path(temp)/'result';stage.mkdir()
-  command=[cli,'extract' if a.mode=='precision' else 'flash-extract',str(source),'--language','en','--formula','--table','--timeout',str(a.timeout),'-o',str(stage/'document.md')]
+  command=[*cli_prefix,'extract' if a.mode=='precision' else 'flash-extract',str(source),'--language','en','--formula','--table','--timeout',str(a.timeout),'-o',str(stage/'document.md')]
   if a.structured:command[-1]=str(stage)+__import__('os').sep;command+=['--format','md,json']
   if a.mode=='precision':command+=['--model',a.model]
   if a.ocr:command+=['--ocr']

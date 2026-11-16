@@ -1,0 +1,1644 @@
+source,target
+# 膜材料与制备
+membrane material,膜材料
+polymeric membrane,聚合物膜
+inorganic membrane,无机膜
+ceramic membrane,陶瓷膜
+mixed matrix membrane,混合基质膜
+composite membrane,复合膜
+thin-film composite,薄膜复合
+thin-film composite membrane,薄膜复合膜
+thin-film nanocomposite membrane,薄膜纳米复合膜
+asymmetric membrane,非对称膜
+symmetric membrane,对称膜
+hollow fiber membrane,中空纤维膜
+flat sheet membrane,平板膜
+tubular membrane,管式膜
+spiral wound module,卷式组件
+hollow fiber module,中空纤维组件
+plate-and-frame module,板框式组件
+membrane module,膜组件
+selective layer,选择层
+active layer,活性层
+skin layer,皮层
+support layer,支撑层
+substrate layer,基底层
+porous substrate,多孔基底
+nonwoven fabric,无纺布
+phase inversion,相转化
+non-solvent induced phase separation,非溶剂致相分离
+thermally induced phase separation,热致相分离
+vapor induced phase separation,蒸汽致相分离
+evaporation induced phase separation,蒸发致相分离
+interfacial polymerization,界面聚合
+casting solution,铸膜液
+dope solution,铸膜液
+coagulation bath,凝固浴
+non-solvent,非溶剂
+pore-forming agent,致孔剂
+pore former,致孔剂
+dip coating,浸涂
+spin coating,旋涂
+spray coating,喷涂
+electrospinning,静电纺丝
+electrospun nanofiber,静电纺丝纳米纤维
+layer-by-layer assembly,层层自组装
+surface modification,表面改性
+surface grafting,表面接枝
+graft polymerization,接枝聚合
+plasma treatment,等离子体处理
+crosslinking,交联
+crosslinking degree,交联度
+crosslinking agent,交联剂
+cross-linked network,交联网络
+blending modification,共混改性
+annealing,退火
+post-treatment,后处理
+sintering,烧结
+sol-gel method,溶胶-凝胶法
+chemical vapor deposition,化学气相沉积
+atomic layer deposition,原子层沉积
+polyvinylidene fluoride,聚偏氟乙烯
+polyethersulfone,聚醚砜
+polysulfone,聚砜
+polyacrylonitrile,聚丙烯腈
+polytetrafluoroethylene,聚四氟乙烯
+polypropylene,聚丙烯
+polyethylene,聚乙烯
+polyvinyl chloride,聚氯乙烯
+polyvinyl alcohol,聚乙烯醇
+polyvinylpyrrolidone,聚乙烯吡咯烷酮
+polyethylene glycol,聚乙二醇
+polyimide,聚酰亚胺
+polyamide,聚酰胺
+polybenzimidazole,聚苯并咪唑
+polyether ether ketone,聚醚醚酮
+sulfonated poly(ether ether ketone),磺化聚醚醚酮
+polyphenylene oxide,聚苯醚
+cellulose acetate,醋酸纤维素
+cellulose triacetate,三醋酸纤维素
+polydimethylsiloxane,聚二甲基硅氧烷
+polymer of intrinsic microporosity,自具微孔聚合物
+perfluorosulfonic acid,全氟磺酸
+polystyrene,聚苯乙烯
+divinylbenzene,二乙烯基苯
+styrene-divinylbenzene copolymer,苯乙烯-二乙烯基苯共聚物
+quaternary ammonium group,季铵基团
+sulfonic acid group,磺酸基团
+carboxylic acid group,羧酸基团
+fixed charge density,固定电荷密度
+fixed charge group,固定电荷基团
+ion exchange group,离子交换基团
+homogeneous membrane,均相膜
+heterogeneous membrane,异相膜
+m-phenylenediamine,间苯二胺
+piperazine,哌嗪
+trimesoyl chloride,均苯三甲酰氯
+polyamide layer,聚酰胺层
+aqueous phase monomer,水相单体
+organic phase monomer,有机相单体
+metal-organic framework,金属有机框架
+covalent organic framework,共价有机框架
+zeolite,分子筛
+graphene oxide,氧化石墨烯
+reduced graphene oxide,还原氧化石墨烯
+carbon nanotube,碳纳米管
+two-dimensional material,二维材料
+nanochannel,纳米通道
+nanosheet,纳米片
+nanoparticle,纳米颗粒
+nanofiller,纳米填料
+interlayer spacing,层间距
+carbon molecular sieve membrane,碳分子筛膜
+alumina,氧化铝
+zirconia,氧化锆
+titania,二氧化钛
+silica,二氧化硅
+hydrophilicity,亲水性
+hydrophobicity,疏水性
+superhydrophobic,超疏水
+superhydrophilic,超亲水
+omniphobic membrane,全疏膜
+Janus membrane,Janus 膜
+oleophobicity,疏油性
+surface roughness,表面粗糙度
+surface charge,表面电荷
+surface free energy,表面自由能
+pore size,孔径
+pore size distribution,孔径分布
+mean pore size,平均孔径
+maximum pore size,最大孔径
+porosity,孔隙率
+tortuosity,曲折因子
+pore connectivity,孔连通性
+finger-like pore,指状孔
+finger-like structure,指状结构
+sponge-like structure,海绵状结构
+macrovoid,大孔
+cross-section morphology,断面形貌
+membrane thickness,膜厚度
+mechanical strength,机械强度
+tensile strength,拉伸强度
+elongation at break,断裂伸长率
+thermal stability,热稳定性
+chemical stability,化学稳定性
+dimensional stability,尺寸稳定性
+long-term stability,长期稳定性
+liquid entry pressure,液体穿透压力
+bubble point,泡点
+# 压力驱动与渗透驱动膜过程
+membrane separation,膜分离
+membrane technology,膜技术
+membrane process,膜过程
+pressure-driven membrane process,压力驱动膜过程
+microfiltration,微滤
+ultrafiltration,超滤
+nanofiltration,纳滤
+reverse osmosis,反渗透
+forward osmosis,正渗透
+pressure retarded osmosis,压力延迟渗透
+osmotically assisted reverse osmosis,渗透辅助反渗透
+low-pressure reverse osmosis,低压反渗透
+seawater reverse osmosis,海水反渗透
+brackish water reverse osmosis,苦咸水反渗透
+loose nanofiltration,疏松纳滤
+dead-end filtration,死端过滤
+cross-flow filtration,错流过滤
+crossflow velocity,错流速度
+permeate,渗透液
+permeate flux,渗透通量
+water flux,水通量
+pure water flux,纯水通量
+pure water permeability,纯水渗透率
+water permeability,水渗透性
+water permeance,水渗透率
+permeance,渗透率
+permeability,渗透系数
+retentate,截留液
+salt rejection,脱盐率
+rejection rate,截留率
+observed rejection,表观截留率
+real rejection,真实截留率
+retention,截留
+molecular weight cut-off,截留分子量
+selectivity,选择性
+separation factor,分离因子
+permeability-selectivity trade-off,渗透性-选择性权衡
+upper bound,上限
+transmembrane pressure,跨膜压差
+applied pressure,操作压力
+operating pressure,操作压力
+critical flux,临界通量
+sustainable flux,可持续通量
+flux decline,通量衰减
+normalized flux,归一化通量
+flux recovery ratio,通量恢复率
+water recovery,水回收率
+recovery rate,回收率
+concentration factor,浓缩倍数
+volume reduction factor,体积浓缩倍数
+draw solution,汲取液
+draw solute,汲取溶质
+feed solution,原料液
+reverse salt flux,反向盐通量
+specific reverse salt flux,比反向盐通量
+internal concentration polarization,内浓差极化
+external concentration polarization,外浓差极化
+structural parameter,结构参数
+osmotic pressure,渗透压
+osmotic pressure difference,渗透压差
+van 't Hoff equation,范特霍夫方程
+solution-diffusion model,溶解-扩散模型
+pore flow model,孔流模型
+Donnan steric pore model,Donnan 位阻孔模型
+steric hindrance,空间位阻
+size exclusion,尺寸筛分
+size sieving,尺寸筛分
+dielectric exclusion,介电排斥
+charge repulsion,电荷排斥
+Spiegler-Kedem model,Spiegler-Kedem 模型
+reflection coefficient,反射系数
+solute permeability coefficient,溶质渗透系数
+mono/divalent ion selectivity,一价/二价离子选择性
+ion sieving,离子筛分
+Li/Mg separation,锂镁分离
+magnesium/lithium ratio,镁锂比
+pressure vessel,压力容器
+high-pressure pump,高压泵
+energy recovery device,能量回收装置
+pretreatment,预处理
+post-treatment process,后处理工艺
+# 膜污染与清洗
+membrane fouling,膜污染
+fouling,污染
+biofouling,生物污染
+organic fouling,有机污染
+inorganic fouling,无机污染
+colloidal fouling,胶体污染
+mineral scaling,无机结垢
+scaling,结垢
+gypsum scaling,石膏结垢
+silica scaling,硅垢
+reversible fouling,可逆污染
+irreversible fouling,不可逆污染
+hydraulically irreversible fouling,水力不可逆污染
+fouling resistance,污染阻力
+antifouling,抗污染
+antifouling property,抗污染性能
+anti-scaling,抗结垢
+antiscalant,阻垢剂
+fouling mechanism,污染机理
+pore blocking,孔堵塞
+complete pore blocking,完全堵塞
+standard pore blocking,标准堵塞
+intermediate pore blocking,中间堵塞
+cake filtration,滤饼过滤
+cake layer,滤饼层
+gel layer,凝胶层
+foulant,污染物
+natural organic matter,天然有机物
+humic acid,腐殖酸
+fulvic acid,富里酸
+sodium alginate,海藻酸钠
+bovine serum albumin,牛血清白蛋白
+extracellular polymeric substances,胞外聚合物
+soluble microbial products,溶解性微生物产物
+transparent exopolymer particles,透明胞外聚合物颗粒
+biofilm,生物膜
+silt density index,污染密度指数
+modified fouling index,修正污染指数
+resistance-in-series model,串联阻力模型
+intrinsic membrane resistance,膜固有阻力
+total filtration resistance,总过滤阻力
+membrane cleaning,膜清洗
+chemical cleaning,化学清洗
+physical cleaning,物理清洗
+backwashing,反冲洗
+backflushing,反冲洗
+air scouring,曝气擦洗
+clean-in-place,在线清洗
+cleaning efficiency,清洗效率
+flux recovery,通量恢复
+membrane aging,膜老化
+membrane degradation,膜降解
+chlorine resistance,耐氯性
+membrane lifetime,膜寿命
+membrane replacement,膜更换
+# 电驱动膜过程
+electrodialysis,电渗析
+conventional electrodialysis,常规电渗析
+electrodialysis metathesis,复分解电渗析
+metathesis electrodialysis,复分解电渗析
+bipolar membrane electrodialysis,双极膜电渗析
+selective electrodialysis,选择性电渗析
+reverse electrodialysis,反向电渗析
+electrodialysis reversal,倒极电渗析
+electrodeionization,电去离子
+continuous electrodeionization,连续电去离子
+capacitive deionization,电容去离子
+membrane capacitive deionization,膜电容去离子
+flow-electrode capacitive deionization,流动电极电容去离子
+shock electrodialysis,冲击电渗析
+electrodialytic,电渗析的
+electromembrane process,电驱动膜过程
+electro-driven membrane process,电驱动膜过程
+electrochemical membrane process,电化学膜过程
+electrodialyzer,电渗析器
+ion exchange membrane,离子交换膜
+cation exchange membrane,阳离子交换膜
+anion exchange membrane,阴离子交换膜
+proton exchange membrane,质子交换膜
+bipolar membrane,双极膜
+monovalent selective membrane,单价选择性膜
+monovalent selective cation exchange membrane,单价选择性阳离子交换膜
+monovalent selective anion exchange membrane,单价选择性阴离子交换膜
+monovalent anion selective membrane,单价阴离子选择性膜
+proton blocking membrane,阻酸膜
+acid blocking membrane,阻酸膜
+membrane stack,膜堆
+electrodialysis stack,电渗析膜堆
+cell pair,膜对
+repeating unit,重复单元
+spacer,隔网
+flow channel,流道
+intermembrane distance,膜间距
+diluate,淡室
+diluate compartment,淡室
+dilute compartment,淡室
+concentrate compartment,浓室
+brine compartment,浓室
+feed compartment,进料室
+product compartment,产品室
+acid compartment,酸室
+base compartment,碱室
+salt compartment,盐室
+electrode compartment,极室
+electrode rinse solution,极液
+electrode rinse,极液
+anode,阳极
+cathode,阴极
+anolyte,阳极液
+catholyte,阴极液
+anode compartment,阳极室
+cathode compartment,阴极室
+dimensionally stable anode,形稳阳极
+titanium mesh electrode,钛网电极
+ruthenium-coated titanium electrode,钌涂层钛电极
+platinum-coated titanium electrode,铂涂层钛电极
+stainless steel cathode,不锈钢阴极
+electrode reaction,电极反应
+oxygen evolution reaction,析氧反应
+hydrogen evolution reaction,析氢反应
+chlorine evolution reaction,析氯反应
+constant current mode,恒流模式
+constant voltage mode,恒压模式
+batch mode,间歇模式
+continuous mode,连续模式
+feed-and-bleed mode,部分循环模式
+single-pass mode,单程模式
+shunt current,旁路电流
+leakage current,漏电流
+stack voltage,膜堆电压
+cell voltage,槽电压
+applied voltage,外加电压
+applied current,外加电流
+current density,电流密度
+limiting current density,极限电流密度
+overlimiting current,超极限电流
+overlimiting current regime,超极限电流区
+underlimiting current regime,欠极限电流区
+plateau region,平台区
+current-voltage curve,电流-电压曲线
+Cowan-Brown method,Cowan-Brown 法
+current efficiency,电流效率
+Coulombic efficiency,库仑效率
+energy consumption,能耗
+specific energy consumption,单位能耗
+desalination rate,脱盐速率
+desalination ratio,脱盐率
+salt removal efficiency,除盐率
+salt adsorption capacity,吸附盐容量
+charge efficiency,电荷效率
+water splitting,水解离
+water dissociation,水解离
+water splitting voltage,水解离电压
+interfacial layer,中间层
+catalytic interlayer,催化中间层
+water dissociation catalyst,水解离催化剂
+second Wien effect,第二维恩效应
+acid production,产酸
+base production,产碱
+acid and base production,酸碱制备
+proton leakage,质子泄漏
+hydroxide leakage,氢氧根泄漏
+electroconvection,电对流
+electroconvective vortices,电对流涡
+space charge region,空间电荷区
+electric double layer,双电层
+salt leakage,盐泄漏
+co-ion leakage,同离子泄漏
+counter-ion,反离子
+co-ion,同离子
+Donnan exclusion,Donnan 排斥
+Donnan equilibrium,Donnan 平衡
+Donnan potential,Donnan 电势
+membrane potential,膜电位
+permselectivity,选择透过性
+apparent permselectivity,表观选择透过性
+transport number,迁移数
+ion transport number,离子迁移数
+ion migration,离子迁移
+electromigration,电迁移
+ion flux,离子通量
+ion selectivity,离子选择性
+selectivity coefficient,选择性系数
+separation efficiency,分离效率
+electroosmosis,电渗
+electro-osmotic water transport,电渗水迁移
+electro-osmotic drag,电渗拖曳
+osmotic water transport,渗透水迁移
+water transport,水迁移
+back diffusion,反向扩散
+salt back diffusion,盐反向扩散
+membrane resistance,膜电阻
+area resistance,面电阻
+area-specific resistance,面比电阻
+ionic conductivity,离子电导率
+ohmic resistance,欧姆电阻
+non-ohmic resistance,非欧姆电阻
+boundary layer resistance,边界层电阻
+ion exchange capacity,离子交换容量
+water uptake,吸水率
+swelling degree,溶胀度
+swelling ratio,溶胀率
+gel water content,凝胶水含量
+salinity gradient energy,盐差能
+salinity gradient power,盐差能
+power density,功率密度
+open circuit voltage,开路电压
+redox couple,氧化还原电对
+# 膜蒸馏、膜结晶、渗透汽化、气体分离与液膜
+membrane distillation,膜蒸馏
+direct contact membrane distillation,直接接触式膜蒸馏
+air gap membrane distillation,气隙式膜蒸馏
+sweeping gas membrane distillation,吹扫气膜蒸馏
+vacuum membrane distillation,真空膜蒸馏
+permeate gap membrane distillation,渗透间隙膜蒸馏
+membrane crystallization,膜结晶
+membrane crystallizer,膜结晶器
+membrane-assisted crystallization,膜辅助结晶
+osmotic distillation,渗透蒸馏
+pore wetting,膜孔润湿
+membrane wetting,膜润湿
+partial wetting,部分润湿
+temperature polarization,温度极化
+temperature polarization coefficient,温度极化系数
+thermal efficiency,热效率
+gained output ratio,造水比
+vapor pressure difference,蒸汽压差
+Knudsen diffusion,努森扩散
+Knudsen number,努森数
+molecular diffusion,分子扩散
+Poiseuille flow,泊肃叶流
+dusty gas model,尘气模型
+pervaporation,渗透汽化
+vapor permeation,蒸汽渗透
+separation index,分离指数
+pervaporation separation index,渗透汽化分离指数
+dehydration,脱水
+organic solvent nanofiltration,有机溶剂纳滤
+organic solvent reverse osmosis,有机溶剂反渗透
+solvent resistant nanofiltration,耐溶剂纳滤
+gas separation,气体分离
+gas separation membrane,气体分离膜
+CO₂ capture,CO₂ 捕集
+carbon capture,碳捕集
+CO₂/N₂ selectivity,CO₂/N₂ 选择性
+CO₂/CH₄ separation,CO₂/CH₄ 分离
+H₂ purification,H₂ 纯化
+olefin/paraffin separation,烯烃/烷烃分离
+facilitated transport membrane,促进传递膜
+facilitated transport,促进传递
+gas permeability,气体渗透系数
+gas permeation unit,气体渗透单位
+Robeson upper bound,Robeson 上限
+plasticization,塑化
+physical aging,物理老化
+free volume,自由体积
+fractional free volume,自由体积分数
+liquid membrane,液膜
+supported liquid membrane,支撑液膜
+emulsion liquid membrane,乳化液膜
+bulk liquid membrane,体相液膜
+polymer inclusion membrane,聚合物包容膜
+hollow fiber renewal liquid membrane,中空纤维更新液膜
+mobile carrier,流动载体
+fixed-site carrier,固定载体
+base polymer,基体聚合物
+plasticizer,增塑剂
+2-nitrophenyl octyl ether,邻硝基苯辛醚
+membrane contactor,膜接触器
+membrane extraction,膜萃取
+membrane absorption,膜吸收
+membrane emulsification,膜乳化
+membrane reactor,膜反应器
+membrane bioreactor,膜生物反应器
+anaerobic membrane bioreactor,厌氧膜生物反应器
+catalytic membrane reactor,催化膜反应器
+dialysis,渗析
+diffusion dialysis,扩散渗析
+Donnan dialysis,Donnan 渗析
+hemodialysis,血液透析
+# 传质、传递与电化学
+mass transfer,传质
+mass transfer coefficient,传质系数
+overall mass transfer coefficient,总传质系数
+heat transfer,传热
+heat transfer coefficient,传热系数
+momentum transfer,动量传递
+transport phenomena,传递现象
+concentration polarization,浓差极化
+concentration polarization modulus,浓差极化模数
+concentration polarization layer,浓差极化层
+diffusion boundary layer,扩散边界层
+boundary layer,边界层
+boundary layer thickness,边界层厚度
+concentration boundary layer,浓度边界层
+hydrodynamic boundary layer,水力边界层
+thermal boundary layer,热边界层
+film theory,膜理论
+two-film theory,双膜理论
+penetration theory,溶质渗透理论
+surface renewal theory,表面更新理论
+Fick's law,菲克定律
+Fick's first law,菲克第一定律
+Fick's second law,菲克第二定律
+diffusion coefficient,扩散系数
+diffusivity,扩散系数
+self-diffusion coefficient,自扩散系数
+effective diffusion coefficient,有效扩散系数
+interdiffusion coefficient,互扩散系数
+Nernst-Planck equation,Nernst-Planck 方程
+extended Nernst-Planck equation,扩展 Nernst-Planck 方程
+Poisson-Boltzmann equation,泊松-玻尔兹曼方程
+Poisson equation,泊松方程
+Nernst equation,能斯特方程
+Nernst-Einstein equation,Nernst-Einstein 方程
+Stokes-Einstein equation,Stokes-Einstein 方程
+Teorell-Meyer-Sievers theory,TMS 理论
+Maxwell-Stefan equations,Maxwell-Stefan 方程
+convection,对流
+diffusion,扩散
+advection,平流
+electroneutrality,电中性
+electroneutrality condition,电中性条件
+electrochemical potential,电化学势
+chemical potential,化学势
+electric potential,电势
+potential drop,电势降
+electrical double layer,双电层
+Debye length,德拜长度
+zeta potential,Zeta 电位
+streaming potential,流动电位
+isoelectric point,等电点
+point of zero charge,零电荷点
+ionic strength,离子强度
+activity coefficient,活度系数
+mean activity coefficient,平均活度系数
+Debye-Hückel theory,德拜-休克尔理论
+Pitzer model,Pitzer 模型
+ion pairing,离子缔合
+ion hydration,离子水合
+hydrated radius,水合半径
+hydration energy,水合能
+hydration shell,水合层
+dehydration energy,脱水能
+Stokes radius,斯托克斯半径
+ionic radius,离子半径
+ion mobility,离子淌度
+molar conductivity,摩尔电导率
+limiting molar conductivity,极限摩尔电导率
+equivalent conductivity,当量电导率
+electrical conductivity,电导率
+conductivity,电导率
+electrolyte solution,电解质溶液
+strong electrolyte,强电解质
+weak electrolyte,弱电解质
+Faraday constant,法拉第常数
+Faraday's law,法拉第定律
+Ohm's law,欧姆定律
+overpotential,过电位
+overvoltage,过电压
+polarization curve,极化曲线
+electrochemical impedance spectroscopy,电化学阻抗谱
+Nyquist plot,Nyquist 图
+Bode plot,Bode 图
+equivalent circuit,等效电路
+charge transfer resistance,电荷转移电阻
+Warburg impedance,Warburg 阻抗
+chronopotentiometry,计时电位法
+chronoamperometry,计时电流法
+cyclic voltammetry,循环伏安法
+linear sweep voltammetry,线性扫描伏安法
+galvanostatic,恒电流
+potentiostatic,恒电位
+current-voltage characteristic,伏安特性
+transition time,过渡时间
+Sand equation,Sand 方程
+Tafel slope,Tafel 斜率
+exchange current density,交换电流密度
+working electrode,工作电极
+reference electrode,参比电极
+counter electrode,对电极
+Ag/AgCl electrode,Ag/AgCl 电极
+saturated calomel electrode,饱和甘汞电极
+reversible hydrogen electrode,可逆氢电极
+electrolytic cell,电解池
+electrochemical cell,电化学池
+electrolysis,电解
+electrodeposition,电沉积
+electrocoagulation,电絮凝
+electrooxidation,电氧化
+electroreduction,电还原
+anodic oxidation,阳极氧化
+redox reaction,氧化还原反应
+oxidation state,氧化态
+osmosis,渗透
+# 结晶与沉淀
+crystallization,结晶
+cooling crystallization,冷却结晶
+evaporative crystallization,蒸发结晶
+antisolvent crystallization,反溶剂结晶
+reactive crystallization,反应结晶
+reactive precipitation,反应沉淀
+precipitation,沉淀
+co-precipitation,共沉淀
+chemical precipitation,化学沉淀
+selective precipitation,选择性沉淀
+fractional crystallization,分步结晶
+recrystallization,重结晶
+salting out,盐析
+salting-out crystallization,盐析结晶
+solubility,溶解度
+solubility product,溶度积
+solubility product constant,溶度积常数
+solubility curve,溶解度曲线
+metastable zone,介稳区
+metastable zone width,介稳区宽度
+supersaturation,过饱和度
+supersaturation ratio,过饱和比
+relative supersaturation,相对过饱和度
+saturation index,饱和指数
+saturated solution,饱和溶液
+supersaturated solution,过饱和溶液
+undersaturated,欠饱和
+nucleation,成核
+primary nucleation,初级成核
+secondary nucleation,二次成核
+homogeneous nucleation,均相成核
+heterogeneous nucleation,非均相成核
+nucleation rate,成核速率
+induction time,诱导期
+induction period,诱导期
+critical nucleus,临界晶核
+classical nucleation theory,经典成核理论
+crystal growth,晶体生长
+crystal growth rate,晶体生长速率
+Ostwald ripening,奥斯特瓦尔德熟化
+agglomeration,团聚
+aggregation,聚集
+crystal habit,晶习
+crystal morphology,晶体形貌
+crystal size distribution,晶体粒度分布
+particle size distribution,粒径分布
+mean crystal size,平均晶粒尺寸
+crystallite size,晶粒尺寸
+coefficient of variation,变异系数
+polymorph,多晶型
+polymorphism,多晶型现象
+crystal form,晶型
+crystal phase,晶相
+crystal structure,晶体结构
+crystallinity,结晶度
+amorphous,无定形
+single crystal,单晶
+seed crystal,晶种
+seeding,加晶种
+mother liquor,母液
+crystal yield,结晶收率
+crystallizer,结晶器
+MSMPR crystallizer,MSMPR 结晶器
+population balance equation,粒数衡算方程
+population balance model,粒数衡算模型
+solid-liquid separation,固液分离
+filtration,过滤
+centrifugation,离心
+drying,干燥
+calcination,煅烧
+hydrothermal synthesis,水热合成
+solvothermal synthesis,溶剂热合成
+template method,模板法
+hydrolysis,水解
+coprecipitation method,共沉淀法
+Prussian blue,普鲁士蓝
+Prussian blue analogue,普鲁士蓝类似物
+hexacyanoferrate,六氰合铁酸盐
+potassium ferrocyanide,亚铁氰化钾
+potassium ferricyanide,铁氰化钾
+bismuth oxychloride,氯氧化铋
+bismuth oxyhalide,卤氧化铋
+layered structure,层状结构
+oxygen vacancy,氧空位
+exposed facet,暴露晶面
+photocatalyst,光催化剂
+photocatalysis,光催化
+photocatalytic degradation,光催化降解
+band gap,带隙
+calcium carbonate,碳酸钙
+calcium sulfate,硫酸钙
+calcium sulfate dihydrate,二水硫酸钙
+gypsum,石膏
+anhydrite,硬石膏
+hemihydrate,半水合物
+struvite,鸟粪石
+hydroxyapatite,羟基磷灰石
+calcite,方解石
+aragonite,文石
+vaterite,球霰石
+barium sulfate,硫酸钡
+magnesium hydroxide,氢氧化镁
+lithium carbonate,碳酸锂
+lithium hydroxide,氢氧化锂
+potassium sulfate,硫酸钾
+potassium nitrate,硝酸钾
+sodium sulfate,硫酸钠
+sodium chloride,氯化钠
+potassium chloride,氯化钾
+ammonium sulfate,硫酸铵
+ammonium chloride,氯化铵
+sodium nitrate,硝酸钠
+monopotassium phosphate,磷酸二氢钾
+monoammonium phosphate,磷酸一铵
+diammonium phosphate,磷酸二铵
+dihydrate,二水合物
+hydrate,水合物
+anhydrous,无水的
+# 化工原理与流体力学
+unit operation,单元操作
+chemical engineering,化学工程
+process engineering,过程工程
+process intensification,过程强化
+process design,工艺设计
+process simulation,过程模拟
+process flow diagram,工艺流程图
+flowsheet,流程图
+mass balance,质量衡算
+material balance,物料衡算
+energy balance,能量衡算
+heat balance,热量衡算
+steady state,稳态
+unsteady state,非稳态
+transient state,瞬态
+fluid mechanics,流体力学
+fluid dynamics,流体动力学
+hydrodynamics,流体动力学
+computational fluid dynamics,计算流体力学
+laminar flow,层流
+turbulent flow,湍流
+transitional flow,过渡流
+turbulence,湍流
+flow regime,流型
+flow pattern,流型
+flow field,流场
+velocity profile,速度分布
+velocity distribution,速度分布
+concentration profile,浓度分布
+concentration distribution,浓度分布
+temperature profile,温度分布
+shear stress,剪切应力
+wall shear stress,壁面剪切应力
+shear rate,剪切速率
+viscosity,黏度
+dynamic viscosity,动力黏度
+kinematic viscosity,运动黏度
+Newtonian fluid,牛顿流体
+non-Newtonian fluid,非牛顿流体
+pressure drop,压降
+pressure loss,压力损失
+friction factor,摩擦系数
+hydraulic diameter,水力直径
+hydraulic retention time,水力停留时间
+flow rate,流速
+volumetric flow rate,体积流量
+mass flow rate,质量流量
+flow velocity,流速
+linear velocity,线速度
+superficial velocity,表观流速
+cross-flow,错流
+countercurrent flow,逆流
+cocurrent flow,并流
+countercurrent,逆流
+cocurrent,并流
+Reynolds number,雷诺数
+Sherwood number,舍伍德数
+Schmidt number,施密特数
+Nusselt number,努塞尔数
+Prandtl number,普朗特数
+Peclet number,佩克莱数
+Damköhler number,丹克勒数
+Grashof number,格拉晓夫数
+Biot number,毕奥数
+Froude number,弗劳德数
+dimensionless number,无量纲数
+dimensionless analysis,量纲分析
+empirical correlation,经验关联式
+Lévêque equation,Lévêque 方程
+Hagen-Poiseuille equation,Hagen-Poiseuille 方程
+Carman-Kozeny equation,Carman-Kozeny 方程
+Darcy's law,达西定律
+Navier-Stokes equations,纳维-斯托克斯方程
+continuity equation,连续性方程
+Bernoulli equation,伯努利方程
+boundary condition,边界条件
+initial condition,初始条件
+no-slip condition,无滑移条件
+finite element method,有限元法
+finite volume method,有限体积法
+finite difference method,有限差分法
+mesh independence,网格无关性
+heat exchanger,换热器
+shell-and-tube heat exchanger,管壳式换热器
+plate heat exchanger,板式换热器
+log mean temperature difference,对数平均温差
+thermal conductivity,导热系数
+specific heat capacity,比热容
+latent heat,潜热
+latent heat of vaporization,汽化潜热
+sensible heat,显热
+heat loss,热损失
+waste heat,余热
+low-grade heat,低品位热
+evaporator,蒸发器
+multi-effect evaporation,多效蒸发
+multi-effect distillation,多效蒸馏
+multi-stage flash,多级闪蒸
+mechanical vapor recompression,机械蒸汽再压缩
+thermal vapor compression,热力蒸汽压缩
+condenser,冷凝器
+reboiler,再沸器
+centrifugal pump,离心泵
+peristaltic pump,蠕动泵
+booster pump,增压泵
+heat pump,热泵
+stirred tank,搅拌釜
+agitation,搅拌
+stirring speed,搅拌速度
+impeller,搅拌桨
+mixing time,混合时间
+residence time,停留时间
+residence time distribution,停留时间分布
+packed bed,填充床
+fixed bed,固定床
+fluidized bed,流化床
+moving bed,移动床
+bed porosity,床层孔隙率
+particle settling,颗粒沉降
+settling velocity,沉降速度
+Stokes' law,斯托克斯定律
+sedimentation,沉降
+thickener,浓密机
+cyclone separator,旋风分离器
+hydrocyclone,水力旋流器
+filter press,板框压滤机
+filter cake,滤饼
+# 热力学与动力学
+thermodynamics,热力学
+chemical thermodynamics,化学热力学
+thermodynamic equilibrium,热力学平衡
+phase equilibrium,相平衡
+phase diagram,相图
+ternary phase diagram,三元相图
+solid-liquid equilibrium,固液平衡
+vapor-liquid equilibrium,汽液平衡
+liquid-liquid equilibrium,液液平衡
+binodal curve,双节线
+spinodal decomposition,旋节线分解
+cloud point,浊点
+Gibbs free energy,吉布斯自由能
+Gibbs free energy change,吉布斯自由能变
+enthalpy,焓
+enthalpy change,焓变
+entropy,熵
+entropy change,熵变
+entropy generation,熵产
+exergy,㶲
+exergy analysis,㶲分析
+exergy efficiency,㶲效率
+minimum energy of separation,最小分离功
+thermodynamic minimum energy,热力学最小能耗
+second law efficiency,第二定律效率
+heat of reaction,反应热
+heat of dissolution,溶解热
+heat of crystallization,结晶热
+standard enthalpy of formation,标准生成焓
+equilibrium constant,平衡常数
+dissociation constant,解离常数
+acid dissociation constant,酸解离常数
+stability constant,稳定常数
+formation constant,生成常数
+partition coefficient,分配系数
+distribution coefficient,分配系数
+distribution ratio,分配比
+Henry's law,亨利定律
+Henry's constant,亨利常数
+Raoult's law,拉乌尔定律
+vapor pressure,蒸气压
+saturated vapor pressure,饱和蒸气压
+Antoine equation,安托万方程
+equation of state,状态方程
+fugacity,逸度
+fugacity coefficient,逸度系数
+water activity,水活度
+speciation,形态分布
+species distribution,物种分布
+species distribution diagram,物种分布图
+Pourbaix diagram,Pourbaix 图
+Flory-Huggins theory,Flory-Huggins 理论
+Flory-Huggins interaction parameter,Flory-Huggins 相互作用参数
+solubility parameter,溶解度参数
+Hansen solubility parameter,Hansen 溶解度参数
+reaction kinetics,反应动力学
+chemical kinetics,化学动力学
+kinetic model,动力学模型
+rate constant,速率常数
+reaction rate,反应速率
+rate-determining step,速率控制步骤
+rate-limiting step,限速步骤
+reaction order,反应级数
+first-order kinetics,一级动力学
+second-order kinetics,二级动力学
+pseudo-first-order,准一级
+pseudo-second-order,准二级
+pseudo-first-order kinetic model,准一级动力学模型
+pseudo-second-order kinetic model,准二级动力学模型
+intraparticle diffusion model,颗粒内扩散模型
+Elovich model,Elovich 模型
+half-life,半衰期
+activation energy,活化能
+apparent activation energy,表观活化能
+Arrhenius equation,阿伦尼乌斯方程
+pre-exponential factor,指前因子
+Eyring equation,Eyring 方程
+transition state,过渡态
+shrinking core model,缩核模型
+diffusion-controlled,扩散控制
+reaction-controlled,反应控制
+chemical reaction control,化学反应控制
+diffusion control,扩散控制
+mass transfer limitation,传质限制
+mass transfer resistance,传质阻力
+# 反应工程与催化
+chemical reaction engineering,化学反应工程
+reactor design,反应器设计
+batch reactor,间歇反应器
+semi-batch reactor,半间歇反应器
+continuous stirred-tank reactor,连续搅拌釜式反应器
+plug flow reactor,平推流反应器
+packed bed reactor,填充床反应器
+fixed bed reactor,固定床反应器
+fluidized bed reactor,流化床反应器
+microreactor,微反应器
+microfluidic,微流控
+ideal reactor,理想反应器
+space velocity,空速
+space time,空时
+conversion rate,转化率
+stoichiometry,化学计量
+stoichiometric ratio,化学计量比
+molar ratio,摩尔比
+limiting reactant,限量反应物
+excess reactant,过量反应物
+byproduct,副产物
+by-product,副产物
+side reaction,副反应
+main reaction,主反应
+reversible reaction,可逆反应
+irreversible reaction,不可逆反应
+parallel reaction,平行反应
+consecutive reaction,连串反应
+homogeneous reaction,均相反应
+heterogeneous reaction,非均相反应
+metathesis reaction,复分解反应
+double decomposition,复分解
+neutralization,中和
+acid-base neutralization,酸碱中和
+complexation,络合
+complexing agent,络合剂
+chelating agent,螯合剂
+ligand,配体
+catalyst,催化剂
+catalytic activity,催化活性
+catalyst deactivation,催化剂失活
+active site,活性位点
+turnover frequency,转换频率
+heterogeneous catalysis,多相催化
+homogeneous catalysis,均相催化
+electrocatalysis,电催化
+electrocatalyst,电催化剂
+catalyst loading,催化剂负载量
+support material,载体材料
+# 分离工程
+separation engineering,分离工程
+separation process,分离过程
+separation performance,分离性能
+adsorption,吸附
+adsorbent,吸附剂
+adsorbate,吸附质
+desorption,解吸
+adsorption capacity,吸附容量
+equilibrium adsorption capacity,平衡吸附量
+maximum adsorption capacity,最大吸附量
+adsorption isotherm,吸附等温线
+Langmuir isotherm,Langmuir 等温线
+Freundlich isotherm,Freundlich 等温线
+Temkin isotherm,Temkin 等温线
+Dubinin-Radushkevich isotherm,D-R 等温线
+Sips isotherm,Sips 等温线
+adsorption kinetics,吸附动力学
+adsorption mechanism,吸附机理
+breakthrough curve,穿透曲线
+breakthrough point,穿透点
+breakthrough time,穿透时间
+Thomas model,Thomas 模型
+Yoon-Nelson model,Yoon-Nelson 模型
+physisorption,物理吸附
+chemisorption,化学吸附
+electrostatic attraction,静电吸引
+electrostatic interaction,静电相互作用
+hydrogen bonding,氢键作用
+π-π interaction,π-π 相互作用
+van der Waals force,范德华力
+hydrophobic interaction,疏水相互作用
+surface complexation,表面络合
+inner-sphere complex,内层络合物
+outer-sphere complex,外层络合物
+ion exchange,离子交换
+ion exchange resin,离子交换树脂
+cation exchange resin,阳离子交换树脂
+anion exchange resin,阴离子交换树脂
+strong acid cation resin,强酸性阳离子树脂
+weak acid cation resin,弱酸性阳离子树脂
+strong base anion resin,强碱性阴离子树脂
+weak base anion resin,弱碱性阴离子树脂
+chelating resin,螯合树脂
+mixed bed,混床
+regeneration,再生
+regenerant,再生剂
+regeneration efficiency,再生效率
+reusability,重复使用性
+recyclability,可循环性
+adsorption-desorption cycle,吸附-解吸循环
+activated carbon,活性炭
+biochar,生物炭
+granular activated carbon,颗粒活性炭
+powdered activated carbon,粉末活性炭
+specific surface area,比表面积
+pore volume,孔容
+micropore,微孔
+mesopore,介孔
+macropore,大孔
+hierarchical porous structure,多级孔结构
+lithium-ion sieve,锂离子筛
+ion sieve,离子筛
+solvent extraction,溶剂萃取
+liquid-liquid extraction,液液萃取
+extractant,萃取剂
+diluent,稀释剂
+phase modifier,相调节剂
+organic phase,有机相
+aqueous phase,水相
+raffinate,萃余液
+extract phase,萃取相
+loaded organic phase,负载有机相
+stripping,反萃
+stripping agent,反萃剂
+back-extraction,反萃取
+scrubbing,洗涤
+extraction efficiency,萃取率
+stripping efficiency,反萃率
+phase ratio,相比
+organic-to-aqueous phase ratio,有机相与水相相比
+McCabe-Thiele diagram,McCabe-Thiele 图
+number of theoretical stages,理论级数
+theoretical stage,理论级
+mixer-settler,混合澄清槽
+extraction column,萃取塔
+third phase formation,第三相形成
+emulsification,乳化
+phase separation,相分离
+phase disengagement,分相
+synergistic extraction,协同萃取
+tributyl phosphate,磷酸三丁酯
+di(2-ethylhexyl) phosphoric acid,二(2-乙基己基)磷酸
+trioctylamine,三辛胺
+methyltrioctylammonium chloride,甲基三辛基氯化铵
+trihexyltetradecylphosphonium chloride,三己基十四烷基氯化膦
+deep eutectic solvent,低共熔溶剂
+ionic liquid,离子液体
+distillation,精馏
+rectification,精馏
+fractional distillation,分馏
+azeotrope,共沸物
+azeotropic distillation,共沸精馏
+extractive distillation,萃取精馏
+reactive distillation,反应精馏
+relative volatility,相对挥发度
+reflux ratio,回流比
+minimum reflux ratio,最小回流比
+tray column,板式塔
+packed column,填料塔
+height equivalent to a theoretical plate,理论板当量高度
+absorbent,吸收剂
+absorption column,吸收塔
+stripping column,汽提塔
+gas-liquid mass transfer,气液传质
+evaporation,蒸发
+condensation,冷凝
+sublimation,升华
+freeze concentration,冷冻浓缩
+freeze desalination,冷冻脱盐
+leaching,浸出
+chromatography,色谱
+chromatographic separation,色谱分离
+simulated moving bed,模拟移动床
+flotation,浮选
+froth flotation,泡沫浮选
+dissolved air flotation,溶气气浮
+magnetic separation,磁分离
+# 水处理与环境工程
+environmental engineering,环境工程
+water treatment,水处理
+wastewater treatment,废水处理
+wastewater treatment plant,污水处理厂
+municipal wastewater,城市污水
+domestic wastewater,生活污水
+industrial wastewater,工业废水
+secondary effluent,二级出水
+effluent,出水
+influent,进水
+raw water,原水
+drinking water,饮用水
+potable reuse,饮用回用
+water reuse,水回用
+wastewater reclamation,污水再生
+reclaimed water,再生水
+water scarcity,水资源短缺
+water-energy nexus,水-能源纽带关系
+desalination,脱盐
+seawater desalination,海水淡化
+brackish water,苦咸水
+seawater,海水
+brine,卤水
+concentrated brine,浓盐水
+brine management,浓盐水管理
+brine disposal,浓盐水处置
+reverse osmosis concentrate,反渗透浓水
+salt lake brine,盐湖卤水
+geothermal brine,地热卤水
+produced water,采出水
+hypersaline wastewater,高盐废水
+high-salinity wastewater,高盐废水
+saline wastewater,含盐废水
+zero liquid discharge,零液体排放
+minimal liquid discharge,近零液体排放
+total dissolved solids,总溶解性固体
+total suspended solids,总悬浮固体
+suspended solids,悬浮物
+mixed liquor suspended solids,混合液悬浮固体
+mixed liquor volatile suspended solids,混合液挥发性悬浮固体
+chemical oxygen demand,化学需氧量
+biochemical oxygen demand,生化需氧量
+total organic carbon,总有机碳
+dissolved organic carbon,溶解性有机碳
+dissolved organic matter,溶解性有机物
+dissolved oxygen,溶解氧
+total nitrogen,总氮
+total phosphorus,总磷
+ammonia nitrogen,氨氮
+nitrate nitrogen,硝态氮
+turbidity,浊度
+total hardness,总硬度
+alkalinity,碱度
+salinity,盐度
+water quality,水质
+water quality standard,水质标准
+discharge standard,排放标准
+activated sludge,活性污泥
+activated sludge process,活性污泥法
+excess sludge,剩余污泥
+waste activated sludge,剩余活性污泥
+sludge retention time,污泥停留时间
+sludge age,污泥龄
+sludge dewatering,污泥脱水
+sludge bulking,污泥膨胀
+food-to-microorganism ratio,食微比
+aerobic,好氧
+anaerobic,厌氧
+anoxic,缺氧
+anaerobic digestion,厌氧消化
+anaerobic-anoxic-oxic,厌氧-缺氧-好氧
+sequencing batch reactor,序批式反应器
+moving bed biofilm reactor,移动床生物膜反应器
+upflow anaerobic sludge blanket,上流式厌氧污泥床
+constructed wetland,人工湿地
+nitrification,硝化
+denitrification,反硝化
+anaerobic ammonium oxidation,厌氧氨氧化
+anammox,厌氧氨氧化
+biological nutrient removal,生物脱氮除磷
+enhanced biological phosphorus removal,强化生物除磷
+phosphorus removal,除磷
+nitrogen removal,脱氮
+nutrient recovery,营养物回收
+phosphorus recovery,磷回收
+ammonia recovery,氨回收
+eutrophication,富营养化
+primary treatment,一级处理
+secondary treatment,二级处理
+tertiary treatment,三级处理
+advanced treatment,深度处理
+coagulation,混凝
+flocculation,絮凝
+coagulant,混凝剂
+flocculant,絮凝剂
+polyaluminum chloride,聚合氯化铝
+polyacrylamide,聚丙烯酰胺
+ferric chloride,氯化铁
+sedimentation tank,沉淀池
+clarifier,澄清池
+sand filtration,砂滤
+softening,软化
+lime softening,石灰软化
+lime-soda softening,石灰-纯碱软化
+disinfection,消毒
+chlorination,氯化消毒
+disinfection byproducts,消毒副产物
+ultraviolet disinfection,紫外消毒
+ozonation,臭氧氧化
+advanced oxidation process,高级氧化工艺
+advanced oxidation processes,高级氧化工艺
+Fenton reaction,芬顿反应
+Fenton process,芬顿工艺
+Fenton-like,类芬顿
+electro-Fenton,电芬顿
+photo-Fenton,光芬顿
+persulfate activation,过硫酸盐活化
+peroxymonosulfate,过一硫酸盐
+peroxydisulfate,过二硫酸盐
+hydroxyl radical,羟基自由基
+sulfate radical,硫酸根自由基
+reactive oxygen species,活性氧物种
+singlet oxygen,单线态氧
+superoxide radical,超氧自由基
+radical scavenger,自由基淬灭剂
+quenching experiment,淬灭实验
+electron paramagnetic resonance,电子顺磁共振
+mineralization,矿化
+degradation efficiency,降解效率
+degradation pathway,降解途径
+emerging contaminants,新污染物
+emerging pollutants,新兴污染物
+micropollutant,微污染物
+microplastics,微塑料
+per- and polyfluoroalkyl substances,全氟和多氟烷基物质
+pharmaceuticals and personal care products,药品和个人护理品
+antibiotic resistance genes,抗生素抗性基因
+endocrine disrupting compounds,内分泌干扰物
+persistent organic pollutants,持久性有机污染物
+dye wastewater,染料废水
+textile wastewater,纺织废水
+landfill leachate,垃圾渗滤液
+acid mine drainage,酸性矿山废水
+electroplating wastewater,电镀废水
+flue gas desulfurization wastewater,脱硫废水
+coal chemical wastewater,煤化工废水
+pharmaceutical wastewater,制药废水
+heavy metal,重金属
+heavy metal ions,重金属离子
+heavy metal removal,重金属去除
+removal efficiency,去除率
+toxicity,毒性
+ecotoxicity,生态毒性
+bioaccumulation,生物累积
+environmental risk,环境风险
+environmental impact,环境影响
+pollution control,污染控制
+pollutant,污染物
+contaminant,污染物
+groundwater,地下水
+surface water,地表水
+sediment,沉积物
+soil remediation,土壤修复
+carbon neutrality,碳中和
+carbon peak,碳达峰
+greenhouse gas emissions,温室气体排放
+carbon footprint,碳足迹
+circular economy,循环经济
+sustainable development,可持续发展
+cleaner production,清洁生产
+solid waste,固体废物
+hazardous waste,危险废物
+fly ash,飞灰
+red mud,赤泥
+# 资源回收与湿法冶金
+resource recovery,资源回收
+resource utilization,资源化利用
+valorization,高值化利用
+waste valorization,废物资源化
+hydrometallurgy,湿法冶金
+pyrometallurgy,火法冶金
+acid leaching,酸浸
+alkaline leaching,碱浸
+leaching efficiency,浸出率
+leaching rate,浸出速率
+leachate,浸出液
+pregnant leach solution,富液
+lixiviant,浸出剂
+roasting,焙烧
+smelting,熔炼
+electrowinning,电积
+electrorefining,电解精炼
+cementation,置换沉淀
+impurity removal,除杂
+deep purification,深度净化
+platinum group metals,铂族金属
+precious metals,贵金属
+platinum,铂
+palladium,钯
+rhodium,铑
+iridium,铱
+ruthenium,钌
+osmium,锇
+chloro-complex,氯配合物
+spent catalyst,废催化剂
+spent automotive catalyst,废汽车尾气催化剂
+secondary resources,二次资源
+urban mining,城市矿产
+electronic waste,电子废弃物
+spent lithium-ion battery,废旧锂离子电池
+battery recycling,电池回收
+cathode material,正极材料
+black mass,黑粉
+rare earth elements,稀土元素
+critical metals,关键金属
+lithium extraction,提锂
+direct lithium extraction,直接提锂
+lithium recovery,锂回收
+salt lake,盐湖
+lithium-rich brine,富锂卤水
+Mg/Li ratio,镁锂比
+sodium-lithium separation,钠锂分离
+acid recovery,酸回收
+base recovery,碱回收
+alkali recovery,碱回收
+spent acid,废酸
+pickling liquor,酸洗废液
+salt conversion,盐转化
+salt splitting,盐分解
+by-product valorization,副产物高值化
+value-added product,高附加值产品
+high-value product,高值产品
+product purity,产品纯度
+recovery efficiency,回收率
+metal recovery,金属回收
+separation of metals,金属分离
+# 磷化工与湿法磷酸
+phosphoric acid,磷酸
+wet-process phosphoric acid,湿法磷酸
+thermal-process phosphoric acid,热法磷酸
+phosphate rock,磷矿
+phosphorite,磷块岩
+phosphogypsum,磷石膏
+dihydrate process,二水法
+hemihydrate process,半水法
+hemihydrate-dihydrate process,半水-二水法
+acidulation,酸解
+purified phosphoric acid,净化磷酸
+food-grade phosphoric acid,食品级磷酸
+electronic-grade phosphoric acid,电子级磷酸
+industrial-grade phosphoric acid,工业级磷酸
+phosphoric acid purification,磷酸净化
+defluorination,脱氟
+desulfurization,脱硫
+fluorosilicic acid,氟硅酸
+fluoride,氟化物
+metallic impurities,金属杂质
+phosphate fertilizer,磷肥
+compound fertilizer,复合肥
+potash fertilizer,钾肥
+phosphorus chemical industry,磷化工
+phosphate,磷酸盐
+dihydrogen phosphate,磷酸二氢根
+hydrogen phosphate,磷酸氢根
+sulfuric acid,硫酸
+hydrochloric acid,盐酸
+nitric acid,硝酸
+sodium hydroxide,氢氧化钠
+potassium hydroxide,氢氧化钾
+ammonia water,氨水
+# 表征与分析
+X-ray diffraction,X 射线衍射
+powder X-ray diffraction,粉末 X 射线衍射
+small-angle X-ray scattering,小角 X 射线散射
+wide-angle X-ray scattering,广角 X 射线散射
+grazing incidence wide-angle X-ray scattering,掠入射广角 X 射线散射
+Rietveld refinement,Rietveld 精修
+Scherrer equation,谢乐公式
+diffraction peak,衍射峰
+full width at half maximum,半峰宽
+lattice parameter,晶格参数
+d-spacing,晶面间距
+scanning electron microscopy,扫描电子显微镜
+field emission scanning electron microscopy,场发射扫描电子显微镜
+transmission electron microscopy,透射电子显微镜
+high-resolution transmission electron microscopy,高分辨透射电子显微镜
+selected area electron diffraction,选区电子衍射
+energy dispersive X-ray spectroscopy,能量色散 X 射线能谱
+energy-dispersive X-ray spectroscopy,能量色散 X 射线能谱
+elemental mapping,元素面扫描
+atomic force microscopy,原子力显微镜
+X-ray photoelectron spectroscopy,X 射线光电子能谱
+binding energy,结合能
+high-resolution spectrum,高分辨谱
+deconvolution,分峰拟合
+Fourier transform infrared spectroscopy,傅里叶变换红外光谱
+attenuated total reflectance,衰减全反射
+Raman spectroscopy,拉曼光谱
+ultraviolet-visible spectroscopy,紫外-可见光谱
+UV-vis spectrophotometer,紫外-可见分光光度计
+diffuse reflectance spectroscopy,漫反射光谱
+photoluminescence spectroscopy,光致发光光谱
+nuclear magnetic resonance,核磁共振
+solid-state NMR,固体核磁共振
+gel permeation chromatography,凝胶渗透色谱
+molecular weight distribution,分子量分布
+thermogravimetric analysis,热重分析
+differential scanning calorimetry,差示扫描量热法
+differential thermal analysis,差热分析
+glass transition temperature,玻璃化转变温度
+melting point,熔点
+decomposition temperature,分解温度
+weight loss,失重
+dynamic mechanical analysis,动态力学分析
+Brunauer-Emmett-Teller,BET
+nitrogen adsorption-desorption isotherm,氮气吸附-脱附等温线
+Barrett-Joyner-Halenda,BJH
+mercury intrusion porosimetry,压汞法
+capillary flow porometry,毛细流动孔径分析
+gas-liquid displacement method,气液置换法
+positron annihilation lifetime spectroscopy,正电子湮没寿命谱
+water contact angle,水接触角
+contact angle,接触角
+dynamic contact angle,动态接触角
+underwater oil contact angle,水下油接触角
+sliding angle,滚动角
+surface tension,表面张力
+zeta potential analyzer,Zeta 电位分析仪
+streaming potential analyzer,流动电位分析仪
+surface zeta potential,表面 Zeta 电位
+dynamic light scattering,动态光散射
+laser particle size analyzer,激光粒度仪
+hydrodynamic diameter,水合粒径
+inductively coupled plasma,电感耦合等离子体
+inductively coupled plasma optical emission spectrometry,电感耦合等离子体发射光谱
+inductively coupled plasma mass spectrometry,电感耦合等离子体质谱
+inductively coupled plasma atomic emission spectroscopy,电感耦合等离子体原子发射光谱
+atomic absorption spectroscopy,原子吸收光谱
+ion chromatography,离子色谱
+high-performance liquid chromatography,高效液相色谱
+gas chromatography,气相色谱
+gas chromatography-mass spectrometry,气相色谱-质谱联用
+liquid chromatography-mass spectrometry,液相色谱-质谱联用
+total organic carbon analyzer,总有机碳分析仪
+three-dimensional excitation-emission matrix,三维荧光光谱
+excitation-emission matrix,激发-发射矩阵
+X-ray fluorescence,X 射线荧光
+X-ray absorption spectroscopy,X 射线吸收谱
+extended X-ray absorption fine structure,扩展 X 射线吸收精细结构
+X-ray absorption near-edge structure,X 射线吸收近边结构
+Mössbauer spectroscopy,穆斯堡尔谱
+electron energy loss spectroscopy,电子能量损失谱
+confocal laser scanning microscopy,激光共聚焦显微镜
+optical microscope,光学显微镜
+polarized light microscopy,偏光显微镜
+focused beam reflectance measurement,聚焦光束反射测量
+in situ characterization,原位表征
+in situ monitoring,原位监测
+online monitoring,在线监测
+conductivity meter,电导率仪
+pH meter,pH 计
+titration,滴定
+potentiometric titration,电位滴定
+acid-base titration,酸碱滴定
+EDTA titration,EDTA 滴定
+spectrophotometry,分光光度法
+molybdenum blue method,钼蓝法
+standard curve,标准曲线
+calibration curve,标准曲线
+detection limit,检出限
+limit of detection,检出限
+limit of quantification,定量限
+relative standard deviation,相对标准偏差
+standard deviation,标准差
+error bar,误差棒
+measurement uncertainty,测量不确定度
+reproducibility,重现性
+repeatability,重复性
+parallel experiments,平行实验
+blank experiment,空白实验
+control experiment,对照实验
+density functional theory,密度泛函理论
+molecular dynamics simulation,分子动力学模拟
+Monte Carlo simulation,蒙特卡洛模拟
+first-principles calculation,第一性原理计算
+adsorption energy,吸附能
+electrostatic potential,静电势
+radial distribution function,径向分布函数
+mean square displacement,均方位移
+response surface methodology,响应面法
+Box-Behnken design,Box-Behnken 设计
+central composite design,中心复合设计
+orthogonal experiment,正交实验
+single-factor experiment,单因素实验
+analysis of variance,方差分析
+coefficient of determination,决定系数
+correlation coefficient,相关系数
+linear regression,线性回归
+nonlinear fitting,非线性拟合
+machine learning,机器学习
+artificial neural network,人工神经网络
+sensitivity analysis,敏感性分析
+# 论文常用表达
+techno-economic analysis,技术经济分析
+techno-economic assessment,技术经济评价
+economic feasibility,经济可行性
+economic analysis,经济分析
+cost analysis,成本分析
+capital expenditure,资本支出
+operating expenditure,运营支出
+capital cost,投资成本
+operating cost,运行成本
+levelized cost of water,平准化水成本
+payback period,投资回收期
+net present value,净现值
+life cycle assessment,生命周期评价
+life cycle cost,生命周期成本
+global warming potential,全球变暖潜势
+proof of concept,概念验证
+proof-of-concept,概念验证
+scale-up,放大
+scaling up,放大
+pilot scale,中试规模
+pilot-scale,中试规模
+pilot plant,中试装置
+pilot test,中试
+bench scale,小试规模
+bench-scale,小试规模
+laboratory scale,实验室规模
+lab-scale,实验室规模
+industrial scale,工业规模
+industrial application,工业应用
+practical application,实际应用
+real-world application,实际应用
+full-scale,全规模
+commercial scale,商业规模
+state of the art,当前最高水平
+state-of-the-art,最先进的
+trade-off,权衡
+trade-off relationship,权衡关系
+benchmarking,对标
+figure of merit,品质因数
+rule of thumb,经验法则
+knowledge gap,知识空白
+research gap,研究空白
+to the best of our knowledge,据我们所知
+for the first time,首次
+synergistic effect,协同效应
+competitive effect,竞争效应
+coexisting ions,共存离子
+competing ions,竞争离子
+interfering ions,干扰离子
+underlying mechanism,内在机理
+mechanistic insight,机理认识
+mechanistic understanding,机理认识
+structure-performance relationship,构效关系
+structure-property relationship,结构-性能关系
+design principle,设计原则
+rational design,理性设计
+facile method,简便方法
+one-pot synthesis,一锅法合成
+green synthesis,绿色合成
+cost-effective,经济高效的
+energy-efficient,节能的
+environmentally friendly,环境友好的
+eco-friendly,环境友好的
+low-carbon,低碳
+sustainability,可持续性
+robustness,稳健性
+scalability,可放大性
+long-term operation,长期运行
+cycling stability,循环稳定性
+operational stability,运行稳定性
+operating conditions,操作条件
+operating parameters,操作参数
+optimal conditions,最优条件
+multi-objective optimization,多目标优化
+parametric study,参数研究
+mathematical model,数学模型
+modeling and simulation,建模与仿真
+model validation,模型验证
+experimental validation,实验验证
+experimental data,实验数据
+theoretical calculation,理论计算
+theoretical value,理论值
+numerical simulation,数值模拟
+semi-empirical model,半经验模型
+fitting parameter,拟合参数
+key parameter,关键参数
+driving force,推动力
+energy barrier,能垒
+free energy barrier,自由能垒
+rate-limiting,限速
+dominant mechanism,主导机理
+governing equation,控制方程
+critical review,综述评论
+review article,综述
+challenges and opportunities,挑战与机遇
+future perspectives,未来展望
+future directions,未来方向
+graphical abstract,图文摘要
+supplementary material,补充材料
+supporting information,支撑信息
+corresponding author,通讯作者
+peer review,同行评审
+impact factor,影响因子

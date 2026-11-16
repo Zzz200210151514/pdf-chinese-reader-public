@@ -7,10 +7,16 @@ model: null
 # Set this to the paper's field before translating, e.g. membrane for
 # electrodialysis / membrane-separation papers. See knowledge/terminology/.
 domain: chemistry
+glossary_files:
+  - knowledge/terminology/interlinear-glossary-full.csv
 rules_version: '4.1'
+delivery_mode: resilient
+layout_mode: auto
+merge_batch_types: true
+sample_check_pages: 3
 timeout: 60
 retries: 2
-batch_size: 12
+batch_size: 25
 # Start conservatively; 1 is sequential. Remote/custom adapters allow 1..8 workers.
 # Host-agent scheduling remains controlled by the host.
 concurrency: 1

@@ -211,6 +211,35 @@ class ExtractorModeTests(unittest.TestCase):
             self.assertEqual(prepared['extraction']['extractor'], 'mineru')
             self.assertEqual(list(body['rect']), list(block['rect']))
 
+    def test_mineru_source_json_is_loaded_without_duplicating_native_blocks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'paper.pdf'
+            _pdf(source, [
+                ('First line inside merged paragraph.', (40, 100)),
+                ('Second line inside merged paragraph.', (40, 114)),
+                ('Fig. 1. Native caption text below plot.', (40, 320)),
+            ])
+            mapping = classify(parse(source))
+            bounds = mapping['pages'][0]['rect']
+            prose = next(b for b in mapping['blocks'] if 'First line' in b['source_text'])
+            extraction = root / 'extraction' / 'abc123'
+            extraction.mkdir(parents=True)
+            (extraction / 'extraction-report.json').write_text(json.dumps({'success': True}), encoding='utf-8')
+            (extraction / 'source.json').write_text(json.dumps([
+                {'type': 'text', 'text': 'First line inside merged paragraph.', 'page_idx': 0,
+                 'bbox': _norm(prose['rect'], bounds)},
+                {'type': 'text', 'text': 'Second line inside merged paragraph.', 'page_idx': 0,
+                 'bbox': _norm(prose['rect'], bounds)},
+                {'type': 'image', 'image_caption': ['Fig. 1. Native caption text below plot.'], 'page_idx': 0,
+                 'bbox': [100, 380, 700, 560]},
+            ]), encoding='utf-8')
+            report = fuse_mineru(mapping, root / 'extraction')
+            self.assertTrue(report['applied'])
+            self.assertGreaterEqual(report['claimed_blocks'], 1)
+            self.assertEqual(report['ocr_blocks'], 0)
+            self.assertFalse(any(b.get('origin') == 'mineru-ocr' for b in mapping['blocks']))
+
 
 if __name__ == '__main__':
     unittest.main()
